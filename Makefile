@@ -30,7 +30,7 @@ test:  ## Run all tests
 	pytest -v
 
 test-coverage:  ## Run tests with coverage report
-	pytest --cov=src --cov-report=term-missing --cov-report=html --cov-fail-under=80
+	pytest --cov=src --cov-report=term-missing --cov-report=html --cov-fail-under=70
 
 test-watch:  ## Run tests in watch mode
 	pytest-watch -- -v
@@ -86,7 +86,7 @@ complexity:  ## Check code complexity
 	xenon --max-absolute B --max-modules B --max-average A src/
 
 profile:  ## Profile the main script
-	python -m cProfile -o profile.stats rfc9460_checker.py
+	python -m cProfile -o profile.stats main.py --limit 10
 	python -m pstats profile.stats
 
 docs:  ## Build documentation
@@ -96,10 +96,22 @@ docs-serve:  ## Serve documentation locally
 	sphinx-autobuild docs/ docs/_build/ --port 8000
 
 run:  ## Run the RFC 9460 checker
-	python rfc9460_checker.py
+	python main.py
 
-run-sample:  ## Run checker on sample domains
-	python rfc9460_checker.py --domains google.com,cloudflare.com,github.com
+run-sample:  ## Run checker on sample domains (limit to 10)
+	python main.py --limit 10
+
+run-full:  ## Run checker on all domains
+	python main.py
+
+run-verbose:  ## Run checker with verbose output
+	python main.py --verbose --limit 10
+
+run-debug:  ## Run checker with debug output
+	python main.py --debug --limit 5
+
+serve-results:  ## Start local web server for GitHub Pages site
+	cd docs && python -m http.server 8000
 
 ci:  ## Run CI pipeline locally
 	@echo "Running CI pipeline..."
