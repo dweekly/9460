@@ -61,6 +61,7 @@ logs/
 htmlcov/
 .tox/
 .hypothesis/
+coverage.xml
 
 # Documentation build
 docs/_build/
