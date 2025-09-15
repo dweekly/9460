@@ -98,7 +98,7 @@ class ComplianceReporter:
         filepath = self.output_dir / filename
 
         # Convert numpy types to Python native types for JSON serialization
-        def convert_types(obj):
+        def convert_types(obj: Any) -> Any:
             """Convert numpy types to native Python types."""
             if isinstance(obj, dict):
                 return {k: convert_types(v) for k, v in obj.items()}
@@ -233,11 +233,16 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
 | Feature | Count | Percentage |
 |---------|-------|------------|
-| HTTP/3 Support | {metrics['features']['http3_support']['count']} | {metrics['features']['http3_support']['percentage']}% |
-| ECH Configuration | {metrics['features']['ech_deployment']['count']} | {metrics['features']['ech_deployment']['percentage']}% |
-| Custom Port | {metrics['features']['custom_port']['count']} | {metrics['features']['custom_port']['percentage']}% |
-| IPv4 Hints | {metrics['features']['ipv4_hints']['count']} | {metrics['features']['ipv4_hints']['percentage']}% |
-| IPv6 Hints | {metrics['features']['ipv6_hints']['count']} | {metrics['features']['ipv6_hints']['percentage']}% |
+| HTTP/3 Support | {metrics['features']['http3_support']['count']} | \
+{metrics['features']['http3_support']['percentage']}% |
+| ECH Configuration | {metrics['features']['ech_deployment']['count']} | \
+{metrics['features']['ech_deployment']['percentage']}% |
+| Custom Port | {metrics['features']['custom_port']['count']} | \
+{metrics['features']['custom_port']['percentage']}% |
+| IPv4 Hints | {metrics['features']['ipv4_hints']['count']} | \
+{metrics['features']['ipv4_hints']['percentage']}% |
+| IPv6 Hints | {metrics['features']['ipv6_hints']['count']} | \
+{metrics['features']['ipv6_hints']['percentage']}% |
 
 ## Top Performers
 

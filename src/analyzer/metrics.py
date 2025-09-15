@@ -1,7 +1,7 @@
 """Metrics calculation for RFC 9460 compliance analysis."""
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 import pandas as pd
 
@@ -62,7 +62,7 @@ def calculate_feature_distribution(data: pd.DataFrame) -> Dict[str, Dict[str, fl
         Dictionary with feature distributions for domains with HTTPS records.
     """
     # Filter to only domains with HTTPS records
-    https_data = data[data["has_https_record"] == True]
+    https_data = data[data["has_https_record"]]
 
     if https_data.empty:
         return {
@@ -168,7 +168,7 @@ def calculate_priority_distribution(data: pd.DataFrame) -> Dict[int, int]:
     Returns:
         Dictionary mapping priority values to counts.
     """
-    https_data = data[data["has_https_record"] == True]
+    https_data = data[data["has_https_record"]]
     priority_counts = https_data["https_priority"].value_counts().to_dict()
     return {int(k): v for k, v in priority_counts.items() if pd.notna(k)}
 

@@ -8,10 +8,9 @@ import logging
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from rich.console import Console
-from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
 from src.analyzer import generate_summary_report
 from src.rfc9460_checker import RFC9460Checker
@@ -110,7 +109,12 @@ async def check_all_domains(domains: List[str], checker: RFC9460Checker) -> List
 
         # Show final status
         progress_bar = "█" * 20
-        final_msg = f"[bold green]Complete![/bold green]\n[dim]Last:[/dim] {last_result}\n[bold]Progress:[/bold] [{progress_bar}] {len(domains)}/{len(domains)} (100%)"
+        final_msg = (
+            f"[bold green]Complete![/bold green]\n"
+            f"[dim]Last:[/dim] {last_result}\n"
+            f"[bold]Progress:[/bold] [{progress_bar}] "
+            f"{len(domains)}/{len(domains)} (100%)"
+        )
         status.update(final_msg)
 
     # Clear the progress display with a final summary
@@ -119,7 +123,7 @@ async def check_all_domains(domains: List[str], checker: RFC9460Checker) -> List
 
 
 async def main_async(args: argparse.Namespace) -> None:
-    """Main async function.
+    """Execute main async function.
 
     Args:
         args: Command-line arguments.
@@ -165,7 +169,7 @@ async def main_async(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    """Main entry point."""
+    """Execute main entry point."""
     parser = argparse.ArgumentParser(
         description="Check websites for RFC 9460 (SVCB/HTTPS DNS records) compliance",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,

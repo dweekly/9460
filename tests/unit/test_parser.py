@@ -2,8 +2,6 @@
 
 from unittest.mock import Mock
 
-import pytest
-
 from src.rfc9460_checker.parser import (
     _parse_alpn,
     _parse_ip_hint,

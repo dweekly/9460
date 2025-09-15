@@ -9,7 +9,7 @@ import dns.rdatatype
 import dns.resolver
 from asyncio_throttle import Throttler
 
-from .exceptions import DNSQueryError, RFC9460Error
+from .exceptions import DNSQueryError
 from .parser import parse_https_record
 from .validator import validate_domain
 

@@ -4,7 +4,6 @@
 import argparse
 import asyncio
 import csv
-import json
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -15,7 +14,6 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 from rich.table import Table
 
-from analyzer import generate_summary_report
 from rfc9460_checker import RFC9460Checker
 from utils import load_config, load_websites, setup_logging
 
@@ -173,9 +171,9 @@ def display_summary(results: List[dict]) -> None:
     console.print(table)
 
     # Show domains with HTTP/3 support
-    http3_domains = df[(df["has_http3"] == True) & (df["subdomain"] == "root")]["domain"].tolist()
+    http3_domains = df[(df["has_http3"]) & (df["subdomain"] == "root")]["domain"].tolist()
     if http3_domains:
-        console.print(f"\n[bold green]Domains with HTTP/3 support:[/bold green]")
+        console.print("\n[bold green]Domains with HTTP/3 support:[/bold green]")
         for domain in http3_domains[:5]:
             console.print(f"  • {domain}")
         if len(http3_domains) > 5:
@@ -183,7 +181,7 @@ def display_summary(results: List[dict]) -> None:
 
 
 def main() -> None:
-    """Main entry point for CLI."""
+    """Execute main entry point for CLI."""
     parser = argparse.ArgumentParser(
         description="Check domains for RFC 9460 (SVCB/HTTPS DNS records) compliance",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -283,7 +281,7 @@ def main() -> None:
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         output_file = f"results/rfc9460_compliance_{timestamp}.csv"
 
-    console.print(f"[bold cyan]RFC 9460 Compliance Checker v1.0.0[/bold cyan]")
+    console.print("[bold cyan]RFC 9460 Compliance Checker v1.0.0[/bold cyan]")
     console.print(f"Checking {len(domains)} domains...\n")
 
     # Run the async checker

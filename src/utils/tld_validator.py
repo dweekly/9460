@@ -199,7 +199,7 @@ def init_tld_cache() -> None:
     """Initialize TLD cache on module load (non-blocking)."""
     import threading
 
-    def _init():
+    def _init() -> None:
         try:
             get_valid_tlds()
         except Exception:

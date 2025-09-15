@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""
-RFC 9460 Compliance Checker
-Checks top websites for SVCB and HTTPS DNS records compliance
+"""RFC 9460 Compliance Checker.
+
+Checks top websites for SVCB and HTTPS DNS records compliance.
 """
 
 import asyncio
@@ -9,7 +9,7 @@ import csv
 import json
 import os
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import dns.asyncresolver
 import dns.rdatatype
@@ -25,7 +25,10 @@ console = Console()
 
 
 class RFC9460Checker:
+    """Checker for RFC 9460 DNS record compliance."""
+
     def __init__(self, dns_servers: List[str] = None):
+        """Initialize RFC 9460 checker with DNS servers."""
         self.dns_servers = dns_servers or ["8.8.8.8", "1.1.1.1", "208.67.222.222"]
         self.resolver = dns.asyncresolver.Resolver()
         self.resolver.nameservers = self.dns_servers
@@ -34,7 +37,7 @@ class RFC9460Checker:
         self.throttler = Throttler(rate_limit=10)  # 10 queries per second
 
     async def query_https_record(self, domain: str, subdomain: str = "") -> Dict[str, Any]:
-        """Query HTTPS record for a domain"""
+        """Query HTTPS record for a domain."""
         full_domain = f"{subdomain}.{domain}" if subdomain else domain
         result = {
             "domain": domain,
@@ -151,7 +154,7 @@ class RFC9460Checker:
         return result
 
     async def check_domain(self, domain: str) -> List[Dict[str, Any]]:
-        """Check both root and www subdomain for a domain"""
+        """Check both root and www subdomain for a domain."""
         tasks = [self.query_https_record(domain, ""), self.query_https_record(domain, "www")]
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -175,7 +178,8 @@ class RFC9460Checker:
         return processed_results
 
 
-async def main():
+async def main() -> None:
+    """Execute main scanning routine for RFC 9460 compliance checking."""
     console.print(f"[bold cyan]RFC 9460 Compliance Checker v{VERSION}[/bold cyan]")
     console.print(f"Starting scan at {datetime.now().isoformat()}\n")
 
@@ -299,18 +303,18 @@ async def main():
     console.print(table)
 
     # Show top HTTP/3 adopters
-    http3_domains = df[(df["has_http3"] == True) & (df["subdomain"] == "root")]["domain"].tolist()
+    http3_domains = df[(df["has_http3"]) & (df["subdomain"] == "root")]["domain"].tolist()
     if http3_domains:
-        console.print(f"\n[bold green]Domains with HTTP/3 support:[/bold green]")
+        console.print("\n[bold green]Domains with HTTP/3 support:[/bold green]")
         for domain in http3_domains[:10]:
             console.print(f"  • {domain}")
         if len(http3_domains) > 10:
             console.print(f"  ... and {len(http3_domains) - 10} more")
 
     # Show domains with ECH support
-    ech_domains = df[(df["ech_config"] == True) & (df["subdomain"] == "root")]["domain"].tolist()
+    ech_domains = df[(df["ech_config"]) & (df["subdomain"] == "root")]["domain"].tolist()
     if ech_domains:
-        console.print(f"\n[bold blue]Domains with ECH support:[/bold blue]")
+        console.print("\n[bold blue]Domains with ECH support:[/bold blue]")
         for domain in ech_domains[:5]:
             console.print(f"  • {domain}")
         if len(ech_domains) > 5:

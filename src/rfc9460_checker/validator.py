@@ -1,7 +1,6 @@
 """Validators for domain names and DNS responses."""
 
 import ipaddress
-import re
 from typing import Any, Dict, List, Optional
 
 from ..utils.tld_validator import validate_domain_tld
@@ -277,7 +276,7 @@ def validate_dataset(data: List[Dict[str, Any]]) -> Dict[str, Any]:
     total_records = len(data)
     invalid_records = []
     all_issues = []
-    issue_counts = {}
+    issue_counts: Dict[str, int] = {}
 
     for i, record in enumerate(data):
         issues = validate_scan_result(record)

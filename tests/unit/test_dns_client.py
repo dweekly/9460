@@ -1,6 +1,5 @@
 """Tests for DNS client module."""
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import dns.resolver

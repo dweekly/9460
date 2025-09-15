@@ -1,7 +1,5 @@
 """Unit tests for validator module."""
 
-import pytest
-
 from src.rfc9460_checker.validator import (
     validate_alpn_protocol,
     validate_dns_response,
