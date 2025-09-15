@@ -191,8 +191,9 @@ class RFC9460Checker:
         ]
 
         # Execute all queries
-        results = await asyncio.gather(
-            *[cfg["coro"] for cfg in task_configs], return_exceptions=True
+        coroutines = [cfg["coro"] for cfg in task_configs]
+        results = await asyncio.gather(  # type: ignore[call-overload]
+            *coroutines, return_exceptions=True
         )
 
         # Process results with proper metadata

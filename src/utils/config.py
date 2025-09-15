@@ -26,7 +26,8 @@ def load_config(config_path: str = "config.json") -> Dict[str, Any]:
         }
 
     with open(config_path) as f:
-        return json.load(f)
+        config_data: Dict[str, Any] = json.load(f)
+        return config_data
 
 
 def load_websites(
@@ -54,9 +55,11 @@ def load_websites(
         data = json.load(f)
 
     if isinstance(data, list):
-        return data
+        websites: List[str] = data
+        return websites
     elif isinstance(data, dict) and "websites" in data:
-        return data["websites"]
+        websites_from_dict: List[str] = data["websites"]
+        return websites_from_dict
     else:
         raise ValueError(f"Invalid websites file format: {websites_path}")
 

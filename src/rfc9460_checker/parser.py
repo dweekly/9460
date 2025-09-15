@@ -142,7 +142,8 @@ def _parse_port(param_value: Any) -> Optional[int]:
         Port number or None.
     """
     if hasattr(param_value, "port"):
-        return param_value.port
+        port_val: Optional[int] = param_value.port
+        return port_val
     elif isinstance(param_value, int):
         return param_value
     else:
