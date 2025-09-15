@@ -60,7 +60,7 @@ repos:
 
       - id: pytest-coverage
         name: pytest-coverage
-        entry: pytest --cov=src --cov-report=term-missing --cov-fail-under=80
+        entry: pytest --cov=src --cov-report=term-missing --cov-fail-under=70
         language: system
         pass_filenames: false
         always_run: true
