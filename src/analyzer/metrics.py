@@ -40,8 +40,12 @@ def calculate_adoption_rate(data: pd.DataFrame) -> Dict[str, Any]:
         }
 
     # Filter to only HTTPS records for main adoption metrics
-    https_data = data[data.get("record_type", "HTTPS") == "HTTPS"] if "record_type" in data else data
-    svcb_data = data[data.get("record_type", "SVCB") == "SVCB"] if "record_type" in data else pd.DataFrame()
+    if "record_type" in data:
+        https_data = data[data.get("record_type", "HTTPS") == "HTTPS"]
+        svcb_data = data[data.get("record_type", "SVCB") == "SVCB"]
+    else:
+        https_data = data
+        svcb_data = pd.DataFrame()
 
     # HTTPS adoption rates
     https_count = len(https_data)
@@ -49,8 +53,12 @@ def calculate_adoption_rate(data: pd.DataFrame) -> Dict[str, Any]:
     overall_adoption = (has_https_count / https_count * 100) if https_count > 0 else 0
 
     # Calculate by subdomain type for HTTPS
-    root_data = https_data[https_data["subdomain"] == "root"] if not https_data.empty else pd.DataFrame()
-    www_data = https_data[https_data["subdomain"] == "www"] if not https_data.empty else pd.DataFrame()
+    root_data = (
+        https_data[https_data["subdomain"] == "root"] if not https_data.empty else pd.DataFrame()
+    )
+    www_data = (
+        https_data[https_data["subdomain"] == "www"] if not https_data.empty else pd.DataFrame()
+    )
 
     root_adoption = (
         (root_data["has_https_record"].sum() / len(root_data) * 100) if len(root_data) > 0 else 0
@@ -61,7 +69,11 @@ def calculate_adoption_rate(data: pd.DataFrame) -> Dict[str, Any]:
     )
 
     # SVCB adoption rate
-    svcb_count = svcb_data["has_svcb_record"].sum() if not svcb_data.empty and "has_svcb_record" in svcb_data else 0
+    svcb_count = (
+        svcb_data["has_svcb_record"].sum()
+        if not svcb_data.empty and "has_svcb_record" in svcb_data
+        else 0
+    )
     svcb_total = len(svcb_data) if not svcb_data.empty else 0
     svcb_adoption = (svcb_count / svcb_total * 100) if svcb_total > 0 else 0
 

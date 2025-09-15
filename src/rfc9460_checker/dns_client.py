@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import time
 from typing import Any, Dict, List, Optional
 
 import dns.asyncresolver
@@ -130,10 +129,8 @@ class RFC9460Checker:
 
         cache_key = f"{full_domain}:SVCB"
         if cache_key in self._cache:
-            cached_time, cached_result = self._cache[cache_key]
-            if time.time() - cached_time < self.cache_ttl:
-                logger.debug(f"Using cached result for {full_domain}")
-                return cached_result
+            logger.debug(f"Cache hit for {cache_key}")
+            return self._cache[cache_key]
 
         try:
             async with self.throttler:
@@ -157,7 +154,7 @@ class RFC9460Checker:
             logger.error(f"Error querying SVCB for {full_domain}: {e}")
 
         # Cache the result
-        self._cache[cache_key] = (time.time(), result)
+        self._cache[cache_key] = result
         return result
 
     async def check_domain(self, domain: str) -> List[Dict[str, Any]]:
@@ -171,14 +168,32 @@ class RFC9460Checker:
         """
         # Create tasks with metadata
         task_configs = [
-            {"coro": self.query_https_record(domain, ""), "subdomain": "root", "record_type": "HTTPS"},
-            {"coro": self.query_https_record(domain, "www"), "subdomain": "www", "record_type": "HTTPS"},
-            {"coro": self.query_svcb_record(domain, ""), "subdomain": "root", "record_type": "SVCB"},
-            {"coro": self.query_svcb_record(domain, "www"), "subdomain": "www", "record_type": "SVCB"},
+            {
+                "coro": self.query_https_record(domain, ""),
+                "subdomain": "root",
+                "record_type": "HTTPS",
+            },
+            {
+                "coro": self.query_https_record(domain, "www"),
+                "subdomain": "www",
+                "record_type": "HTTPS",
+            },
+            {
+                "coro": self.query_svcb_record(domain, ""),
+                "subdomain": "root",
+                "record_type": "SVCB",
+            },
+            {
+                "coro": self.query_svcb_record(domain, "www"),
+                "subdomain": "www",
+                "record_type": "SVCB",
+            },
         ]
 
         # Execute all queries
-        results = await asyncio.gather(*[cfg["coro"] for cfg in task_configs], return_exceptions=True)
+        results = await asyncio.gather(
+            *[cfg["coro"] for cfg in task_configs], return_exceptions=True
+        )
 
         # Process results with proper metadata
         processed_results = []

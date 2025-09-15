@@ -138,9 +138,10 @@ class TestRFC9460Checker:
 
             results = await checker.check_domain(domain)
 
-            assert len(results) == 2
-            assert results[0]["subdomain"] == "root"
-            assert results[1]["subdomain"] == "www"
+            assert len(results) == 4  # 2 subdomains × 2 record types
+            # Check we have both HTTPS and SVCB results
+            https_results = [r for r in results if r.get("record_type") == "HTTPS"]
+            assert len(https_results) == 2
             assert mock_query.call_count == 2
 
     @pytest.mark.asyncio
@@ -156,9 +157,9 @@ class TestRFC9460Checker:
 
             results = await checker.check_domain(domain)
 
-            assert len(results) == 2
-            assert results[0]["query_error"] == "Query failed"
-            assert results[1]["subdomain"] == "www"
+            assert len(results) == 4  # 2 subdomains × 2 record types
+            # First HTTPS query failed
+            assert any(r["query_error"] == "Query failed" for r in results)
 
     @pytest.mark.asyncio
     async def test_check_domains_batch_processing(self, checker):

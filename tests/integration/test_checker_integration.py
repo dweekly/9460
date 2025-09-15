@@ -66,7 +66,7 @@ class TestCheckerIntegration:
             results = await checker.check_domains(domains)
 
             # Verify we got results for all domains and subdomains
-            assert len(results) == 4  # 2 domains × 2 subdomains
+            assert len(results) == 8  # 2 domains × 2 subdomains × 2 record types
 
             # Generate reports
             report_paths = generate_summary_report(results, tmp_path)
@@ -181,7 +181,7 @@ class TestCheckerIntegration:
             results = await checker.check_domains(domains)
 
             # Should have results for all domains
-            assert len(results) == 6  # 3 domains × 2 subdomains
+            assert len(results) == 12  # 3 domains × 2 subdomains × 2 record types
 
             # Check that failed domain has error recorded
             fail_results = [r for r in results if r["domain"] == "fail.com"]
