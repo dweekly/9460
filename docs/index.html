@@ -176,6 +176,7 @@
                                     <li>72% support HTTP/3 via ALPN</li>
                                     <li>56% provide IPv4 address hints</li>
                                     <li>33% provide IPv6 address hints</li>
+                                    <li>100% use standard port (443)</li>
                                     <li>0% have ECH configuration</li>
                                 </ul>
                             </div>
@@ -188,11 +189,15 @@
                 <div class="col-lg-12">
                     <div class="card shadow-sm">
                         <div class="card-body">
-                            <h4 class="card-title">Adoption Timeline Projection</h4>
-                            <canvas id="timelineChart"></canvas>
-                            <p class="text-muted small mt-3">
-                                * Current adoption at 9%. Industry projections suggest gradual growth as CDN providers and major platforms continue deployment.
-                            </p>
+                            <h4 class="card-title">Port Configuration Analysis</h4>
+                            <div class="alert alert-info mb-0">
+                                <h5><i class="bi bi-info-circle"></i> Standard Port Usage</h5>
+                                <p class="mb-0">
+                                    All 18 domains with HTTPS records use <strong>standard HTTPS port (443)</strong>.
+                                    No custom port configurations were detected in this scan, indicating universal adherence
+                                    to standard HTTPS port conventions among early adopters.
+                                </p>
+                            </div>
                         </div>
                     </div>
                 </div>

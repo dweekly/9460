@@ -20,7 +20,7 @@ const colors = {
 document.addEventListener('DOMContentLoaded', function() {
     initAdoptionChart();
     initFeaturesChart();
-    initTimelineChart();
+    // Timeline chart removed - only one data point available
     initAlpnChart();
     initPriorityChart();
 });
@@ -136,101 +136,8 @@ function initFeaturesChart() {
     });
 }
 
-// Timeline Projection Chart
-function initTimelineChart() {
-    const ctx = document.getElementById('timelineChart');
-    if (!ctx) return;
-
-    // Generate projection data
-    const months = ['Sep 2024', 'Dec 2024', 'Mar 2025', 'Jun 2025', 'Sep 2025', 'Dec 2025', 'Mar 2026', 'Jun 2026'];
-    const actual = [null, null, null, null, 9, null, null, null];
-    const projected = [3, 5, 6, 8, 9, 12, 16, 20];
-
-    new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: months,
-            datasets: [{
-                label: 'Actual Adoption',
-                data: actual,
-                borderColor: colors.success,
-                backgroundColor: colors.success,
-                borderWidth: 3,
-                pointRadius: 6,
-                pointBackgroundColor: colors.success,
-                pointBorderColor: '#fff',
-                pointBorderWidth: 2,
-                tension: 0.4
-            }, {
-                label: 'Projected Adoption',
-                data: projected,
-                borderColor: colors.info,
-                backgroundColor: 'transparent',
-                borderWidth: 2,
-                borderDash: [5, 5],
-                pointRadius: 4,
-                pointBackgroundColor: colors.info,
-                pointBorderColor: '#fff',
-                pointBorderWidth: 2,
-                tension: 0.4
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: true,
-            interaction: {
-                mode: 'index',
-                intersect: false
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    max: 25,
-                    title: {
-                        display: true,
-                        text: 'Adoption Rate (%)',
-                        font: {
-                            size: 14
-                        }
-                    },
-                    grid: {
-                        borderDash: [5, 5]
-                    }
-                },
-                x: {
-                    title: {
-                        display: true,
-                        text: 'Timeline',
-                        font: {
-                            size: 14
-                        }
-                    },
-                    grid: {
-                        display: false
-                    }
-                }
-            },
-            plugins: {
-                legend: {
-                    position: 'top',
-                    labels: {
-                        padding: 15,
-                        font: {
-                            size: 14
-                        }
-                    }
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            return context.dataset.label + ': ' + context.parsed.y + '%';
-                        }
-                    }
-                }
-            }
-        }
-    });
-}
+// Timeline chart removed - only one data point available
+// Will be re-added when historical data is collected
 
 // ALPN Protocol Distribution
 function initAlpnChart() {
