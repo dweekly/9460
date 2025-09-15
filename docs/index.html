@@ -54,7 +54,7 @@
                 <div class="col-lg-6">
                     <h1 class="display-4 fw-bold mb-4">RFC 9460 Adoption Analysis</h1>
                     <p class="lead mb-4">
-                        Tracking the deployment of HTTPS DNS Resource Records (SVCB/HTTPS RR) across the top 100 websites
+                        Tracking the deployment of HTTPS and SVCB DNS Resource Records across the top 100 websites
                     </p>
                     <div class="d-flex gap-3 mb-4">
                         <a href="#adoption" class="btn btn-light btn-lg">View Analysis</a>
@@ -186,18 +186,49 @@
             </div>
 
             <div class="row">
-                <div class="col-lg-12">
-                    <div class="card shadow-sm">
+                <div class="col-lg-6">
+                    <div class="card shadow-sm h-100">
                         <div class="card-body">
-                            <h4 class="card-title">Port Configuration Analysis</h4>
-                            <div class="alert alert-info mb-0">
-                                <h5><i class="bi bi-info-circle"></i> Standard Port Usage</h5>
+                            <h4 class="card-title">SVCB vs HTTPS Record Usage</h4>
+                            <div class="alert alert-warning mb-3">
+                                <h6><i class="bi bi-exclamation-triangle"></i> Key Finding</h6>
                                 <p class="mb-0">
-                                    All 18 domains with HTTPS records use <strong>standard HTTPS port (443)</strong>.
-                                    No custom port configurations were detected in this scan, indicating universal adherence
-                                    to standard HTTPS port conventions among early adopters.
+                                    <strong>0% SVCB adoption</strong> - None of the top 100 websites have deployed SVCB records.
+                                    All RFC 9460 implementations exclusively use HTTPS (Type 65) records.
                                 </p>
                             </div>
+                            <ul class="small">
+                                <li><strong>HTTPS Records:</strong> 18 domains (9% adoption)</li>
+                                <li><strong>SVCB Records:</strong> 0 domains (0% adoption)</li>
+                                <li><strong>Both Types:</strong> 0 domains</li>
+                            </ul>
+                            <p class="text-muted small">
+                                SVCB records are for general service binding, while HTTPS records are specifically for HTTP services.
+                                The exclusive use of HTTPS records makes sense for web services.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="card shadow-sm h-100">
+                        <div class="card-body">
+                            <h4 class="card-title">Port Configuration Analysis</h4>
+                            <div class="alert alert-info mb-3">
+                                <h6><i class="bi bi-info-circle"></i> Standard Port Usage</h6>
+                                <p class="mb-0">
+                                    All 18 domains with HTTPS records use <strong>standard HTTPS port (443)</strong>.
+                                    No custom port configurations were detected.
+                                </p>
+                            </div>
+                            <ul class="small">
+                                <li><strong>Standard Port (443):</strong> 100% of HTTPS records</li>
+                                <li><strong>Custom Ports:</strong> 0 domains</li>
+                                <li><strong>Port Hints in Records:</strong> Not specified (defaults to 443)</li>
+                            </ul>
+                            <p class="text-muted small">
+                                The universal use of standard ports indicates conservative deployment strategies
+                                among early adopters.
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -537,8 +568,9 @@ cloudflare.com.    300    IN    TYPE65    \# 67 00010000010003026833026832000400
                             <ul>
                                 <li>Analyzed top 100 websites from global traffic rankings</li>
                                 <li>Queried both root domain and www subdomain for each site</li>
+                                <li>Checked for both HTTPS (Type 65) and SVCB (Type 64) DNS records</li>
                                 <li>Used public DNS resolvers (8.8.8.8, 1.1.1.1) for queries</li>
-                                <li>Checked for HTTPS (Type 65) DNS resource records</li>
+                                <li>Total of 400 DNS queries (100 domains × 2 subdomains × 2 record types)</li>
                             </ul>
 
                             <h5 class="mt-4">Scoring System</h5>

@@ -1,17 +1,14 @@
 {
   "metadata": {
     "version": "1.0.0",
-    "scan_date": "2025-09-15T12:07:57.244213",
+    "scan_date": "2025-09-15T12:02:27.105863",
     "total_domains": 400
   },
   "metrics": {
     "adoption": {
-      "overall_adoption": 9.0,
-      "root_adoption": 8.0,
-      "www_adoption": 10.0,
-      "svcb_adoption": 0.0,
-      "https_count": 18,
-      "svcb_count": 0
+      "overall_adoption": 4.5,
+      "root_adoption": 4.0,
+      "www_adoption": 5.0
     },
     "features": {
       "http3_support": {
