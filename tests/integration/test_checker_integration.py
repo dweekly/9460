@@ -82,7 +82,7 @@ class TestCheckerIntegration:
 
             # Load and verify CSV content
             df = pd.read_csv(report_paths["csv"])
-            assert len(df) == 4
+            assert len(df) == 8  # Now includes SVCB records too
             assert "has_https_record" in df.columns
             assert "has_http3" in df.columns
 
@@ -187,6 +187,7 @@ class TestCheckerIntegration:
             fail_results = [r for r in results if r["domain"] == "fail.com"]
             assert all(r.get("query_error") for r in fail_results)
 
-            # Check that good domains don't have errors
+            # Check that good domains have results (but may have "No HTTPS record" as that's normal)
             good_results = [r for r in results if "good" in r["domain"]]
-            assert all(not r.get("query_error") for r in good_results)
+            # DNS failure is an error, but "No HTTPS record" is just a normal negative result
+            assert all(r.get("query_error") != "DNS failure" for r in good_results)
