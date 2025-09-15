@@ -1,0 +1,124 @@
+name: Scheduled RFC 9460 Scan
+
+on:
+  schedule:
+    # Run daily at 00:00 UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      domains:
+        description: 'Specific domains to check (comma-separated)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  scan:
+    name: Scan Domains
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run RFC 9460 checker
+        run: |
+          if [ -n "${{ github.event.inputs.domains }}" ]; then
+            # Create custom JSON file with specified domains
+            DOMAINS=$(echo "${{ github.event.inputs.domains }}" | tr ',' '\n' | sed 's/^/"/;s/$/"/' | paste -sd ',' -)
+            echo "{\"websites\": [$DOMAINS]}" > custom_domains.json
+            python main.py --websites custom_domains.json --output results
+          else
+            python main.py --output results
+          fi
+
+      - name: Commit results
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add results/
+          git diff --staged --quiet || git commit -m "Add scan results from $(date +%Y-%m-%d)"
+          git push
+
+  analyze:
+    name: Analyze Results
+    needs: scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main  # Get latest with new scan results
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install jupyter pandas matplotlib seaborn
+
+      - name: Run analysis
+        run: |
+          python -c "
+          import pandas as pd
+          import json
+          from pathlib import Path
+          from datetime import datetime
+
+          # Find latest scan result
+          results_dir = Path('results')
+          csv_files = list(results_dir.glob('*.csv'))
+          if not csv_files:
+              print('No scan results found')
+              exit(1)
+
+          latest_file = max(csv_files, key=lambda p: p.stat().st_mtime)
+          print(f'Analyzing {latest_file}')
+
+          # Load and analyze data
+          df = pd.read_csv(latest_file)
+
+          # Generate statistics
+          stats = {
+              'scan_date': datetime.now().isoformat(),
+              'total_domains': len(df[df['subdomain'] == 'root']),
+              'https_adoption': float(df[df['subdomain'] == 'root']['has_https_record'].mean()),
+              'http3_support': float(df[df['subdomain'] == 'root']['has_http3'].mean()),
+              'ech_deployment': float(df[df['subdomain'] == 'root']['ech_config'].mean()),
+              'top_http3_domains': df[(df['has_http3'] == True) & (df['subdomain'] == 'root')]['domain'].head(10).tolist()
+          }
+
+          # Save statistics
+          stats_file = Path('data/processed/latest_stats.json')
+          stats_file.parent.mkdir(parents=True, exist_ok=True)
+          with open(stats_file, 'w') as f:
+              json.dump(stats, f, indent=2)
+
+          print(f'Statistics saved to {stats_file}')
+          print(f'HTTPS Adoption: {stats[\"https_adoption\"]*100:.1f}%')
+          print(f'HTTP/3 Support: {stats[\"http3_support\"]*100:.1f}%')
+          print(f'ECH Deployment: {stats[\"ech_deployment\"]*100:.1f}%')
+          "
+
+      - name: Commit analysis
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add data/processed/
+          git diff --staged --quiet || git commit -m "Update analysis results from $(date +%Y-%m-%d)"
+          git push

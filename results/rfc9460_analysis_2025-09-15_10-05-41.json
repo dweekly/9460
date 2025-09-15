@@ -1,0 +1,59 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "scan_date": "2025-09-15T10:05:41.952641",
+    "total_domains": 4
+  },
+  "metrics": {
+    "adoption": {
+      "overall_adoption": 100.0,
+      "root_adoption": 100.0,
+      "www_adoption": 100.0
+    },
+    "features": {
+      "http3_support": {
+        "count": 2,
+        "percentage": 50.0
+      },
+      "ech_deployment": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "custom_port": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "ipv4_hints": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "ipv6_hints": {
+        "count": 0,
+        "percentage": 0.0
+      }
+    },
+    "average_compliance_score": 55.0,
+    "total_domains_checked": 4,
+    "unique_domains": 2
+  },
+  "distributions": {
+    "alpn_protocols": {
+      "h2": 2,
+      "h3": 2
+    },
+    "priorities": {
+      "1": 4
+    }
+  },
+  "top_performers": [
+    {
+      "domain": "google.com",
+      "score": 70.0
+    },
+    {
+      "domain": "youtube.com",
+      "score": 40.0
+    }
+  ],
+  "error_statistics": {}
+}

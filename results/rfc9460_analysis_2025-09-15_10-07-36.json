@@ -1,0 +1,73 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "scan_date": "2025-09-15T10:07:36.410058",
+    "total_domains": 10
+  },
+  "metrics": {
+    "adoption": {
+      "overall_adoption": 80.0,
+      "root_adoption": 80.0,
+      "www_adoption": 80.0
+    },
+    "features": {
+      "http3_support": {
+        "count": 6,
+        "percentage": 75.0
+      },
+      "ech_deployment": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "custom_port": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "ipv4_hints": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "ipv6_hints": {
+        "count": 0,
+        "percentage": 0.0
+      }
+    },
+    "average_compliance_score": 50.0,
+    "total_domains_checked": 10,
+    "unique_domains": 5
+  },
+  "distributions": {
+    "alpn_protocols": {
+      "h2": 6,
+      "h3": 6
+    },
+    "priorities": {
+      "1": 8
+    }
+  },
+  "top_performers": [
+    {
+      "domain": "google.com",
+      "score": 70.0
+    },
+    {
+      "domain": "facebook.com",
+      "score": 70.0
+    },
+    {
+      "domain": "instagram.com",
+      "score": 70.0
+    },
+    {
+      "domain": "youtube.com",
+      "score": 40.0
+    },
+    {
+      "domain": "twitter.com",
+      "score": 0.0
+    }
+  ],
+  "error_statistics": {
+    "No HTTPS record": 2
+  }
+}
