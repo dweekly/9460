@@ -1,0 +1,98 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "scan_date": "2026-02-03T00:36:25.900867",
+    "total_domains": 404
+  },
+  "metrics": {
+    "adoption": {
+      "overall_adoption": 13.37,
+      "root_adoption": 7.92,
+      "www_adoption": 18.81,
+      "svcb_adoption": 0.0,
+      "https_count": 27,
+      "svcb_count": 0
+    },
+    "features": {
+      "http3_support": {
+        "count": 15,
+        "percentage": 55.56
+      },
+      "ech_deployment": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "custom_port": {
+        "count": 0,
+        "percentage": 0.0
+      },
+      "ipv4_hints": {
+        "count": 10,
+        "percentage": 37.04
+      },
+      "ipv6_hints": {
+        "count": 5,
+        "percentage": 18.52
+      }
+    },
+    "average_compliance_score": 5.09,
+    "total_domains_checked": 404,
+    "unique_domains": 101
+  },
+  "distributions": {
+    "alpn_protocols": {
+      "h2": 25,
+      "h3": 15
+    },
+    "priorities": {
+      "1": 27
+    }
+  },
+  "top_performers": [
+    {
+      "domain": "google.com",
+      "score": 42.5
+    },
+    {
+      "domain": "facebook.com",
+      "score": 42.5
+    },
+    {
+      "domain": "instagram.com",
+      "score": 42.5
+    },
+    {
+      "domain": "discord.com",
+      "score": 42.5
+    },
+    {
+      "domain": "cloudflare.com",
+      "score": 42.5
+    },
+    {
+      "domain": "doordash.com",
+      "score": 42.5
+    },
+    {
+      "domain": "youtube.com",
+      "score": 32.5
+    },
+    {
+      "domain": "stackoverflow.com",
+      "score": 32.5
+    },
+    {
+      "domain": "imdb.com",
+      "score": 21.25
+    },
+    {
+      "domain": "ubisoft.com",
+      "score": 21.25
+    }
+  ],
+  "error_statistics": {
+    "NoAnswer": 201,
+    "No HTTPS record": 174,
+    "NXDOMAIN": 2
+  }
+}
