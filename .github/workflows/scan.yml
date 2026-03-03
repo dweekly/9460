@@ -70,37 +70,39 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install jupyter pandas matplotlib seaborn
 
       - name: Run analysis
         run: |
           python -c "
-          import pandas as pd
           import json
           from pathlib import Path
-          from datetime import datetime
 
-          # Find latest scan result
+          # Find latest scan result (JSON files, not CSV)
           results_dir = Path('results')
-          csv_files = list(results_dir.glob('*.csv'))
-          if not csv_files:
+          json_files = list(results_dir.glob('rfc9460_analysis_*.json'))
+          if not json_files:
               print('No scan results found')
               exit(1)
 
-          latest_file = max(csv_files, key=lambda p: p.stat().st_mtime)
+          latest_file = max(json_files, key=lambda p: p.stat().st_mtime)
           print(f'Analyzing {latest_file}')
 
-          # Load and analyze data
-          df = pd.read_csv(latest_file)
+          # Load scan data
+          with open(latest_file) as f:
+              data = json.load(f)
+
+          metrics = data['metrics']
+          features = metrics['features']
 
           # Generate statistics
           stats = {
-              'scan_date': datetime.now().isoformat(),
-              'total_domains': len(df[df['subdomain'] == 'root']),
-              'https_adoption': float(df[df['subdomain'] == 'root']['has_https_record'].mean()),
-              'http3_support': float(df[df['subdomain'] == 'root']['has_http3'].mean()),
-              'ech_deployment': float(df[df['subdomain'] == 'root']['ech_config'].mean()),
-              'top_http3_domains': df[(df['has_http3'] == True) & (df['subdomain'] == 'root')]['domain'].head(10).tolist()
+              'scan_date': data['metadata']['scan_date'],
+              'total_domains': metrics['unique_domains'],
+              'https_adoption': metrics['adoption']['overall_adoption'] / 100,
+              'http3_support': features['http3_support']['percentage'] / 100,
+              'ech_deployment': features['ech_deployment']['percentage'] / 100,
+              'average_compliance_score': metrics['average_compliance_score'],
+              'total_domains_checked': metrics['total_domains_checked'],
           }
 
           # Save statistics
