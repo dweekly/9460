@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 import dns.asyncresolver
 import dns.rdatatype
 import dns.resolver
-from asyncio_throttle import Throttler
+from asyncio_throttle import Throttler  # type: ignore[attr-defined]
 
 from .exceptions import DNSQueryError
 from .parser import parse_https_record, parse_svcb_record
