@@ -156,9 +156,9 @@ def calculate_compliance_metrics(data: pd.DataFrame) -> Dict[str, Any]:
                 score += 20  # HTTP/3 support
             if row.get("ech_config"):
                 score += 15  # ECH configuration
-            if row.get("ipv4hint") or row.get("ipv6hint"):
+            if pd.notna(row.get("ipv4hint")) or pd.notna(row.get("ipv6hint")):
                 score += 15  # IP hints
-            if row.get("alpn_protocols"):
+            if pd.notna(row.get("alpn_protocols")):
                 score += 10  # ALPN specified
         compliance_scores.append(score)
 
@@ -233,9 +233,9 @@ def identify_top_performers(data: pd.DataFrame, top_n: int = 10) -> List[Tuple[s
                     score += 20
                 if row.get("ech_config"):
                     score += 15
-                if row.get("ipv4hint") or row.get("ipv6hint"):
+                if pd.notna(row.get("ipv4hint")) or pd.notna(row.get("ipv6hint")):
                     score += 15
-                if row.get("alpn_protocols"):
+                if pd.notna(row.get("alpn_protocols")):
                     score += 10
 
         domain_scores[domain] = score / count if count > 0 else 0
