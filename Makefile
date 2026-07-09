@@ -1,4 +1,4 @@
-.PHONY: help install install-dev format lint typecheck test test-coverage test-watch clean build quality security pre-commit
+.PHONY: help install install-dev format lint typecheck test test-coverage test-unit test-integration site-test clean build quality security pre-commit pre-commit-update deps-update deps-check profile run run-sample run-full run-verbose run-debug serve-results ci
 
 help:  ## Show this help message
 	@echo "Usage: make [target]"
@@ -15,13 +15,13 @@ install-dev:  ## Install all dependencies including dev tools
 	pre-commit install --hook-type pre-push
 
 format:  ## Format code with black and isort
-	black --line-length=100 .
-	isort --profile=black --line-length=100 .
+	black --line-length=100 main.py src tests
+	isort --profile=black --line-length=100 main.py src tests
 
 lint:  ## Run all linters
-	black --check --line-length=100 .
-	isort --check-only --profile=black --line-length=100 .
-	flake8 --max-line-length=100 --extend-ignore=E203,W503 .
+	black --check --line-length=100 main.py src tests
+	isort --check-only --profile=black --line-length=100 main.py src tests
+	flake8 --max-line-length=100 --extend-ignore=E203,W503 main.py src tests
 
 typecheck:  ## Run mypy type checking
 	mypy --strict --ignore-missing-imports src/
@@ -32,14 +32,16 @@ test:  ## Run all tests
 test-coverage:  ## Run tests with coverage report
 	pytest --cov=src --cov-report=term-missing --cov-report=html --cov-fail-under=70
 
-test-watch:  ## Run tests in watch mode
-	pytest-watch -- -v
-
 test-unit:  ## Run only unit tests
-	pytest -v -m unit
+	pytest -v tests/unit
 
 test-integration:  ## Run only integration tests
-	pytest -v -m integration
+	pytest -v tests/integration
+
+site-test:  ## Syntax-check and smoke-test the generated dashboard
+	node --check docs/assets/js/main.js
+	node --check docs/assets/js/charts.js
+	node tests/dashboard_smoke.js
 
 clean:  ## Clean build artifacts and cache files
 	rm -rf build/
@@ -63,10 +65,10 @@ quality:  ## Run all quality checks (lint, typecheck, test)
 	@make lint
 	@make typecheck
 	@make test-coverage
+	@make site-test
 
 security:  ## Run security audit
-	pip-audit
-	bandit -r src/ -f json -o bandit-report.json
+	pip-audit --requirement requirements.txt
 
 pre-commit:  ## Run pre-commit hooks on all files
 	pre-commit run --all-files
@@ -74,26 +76,15 @@ pre-commit:  ## Run pre-commit hooks on all files
 pre-commit-update:  ## Update pre-commit hooks to latest versions
 	pre-commit autoupdate
 
-deps-update:  ## Update dependencies to latest versions
-	pip-compile --upgrade requirements.in
-	pip-compile --upgrade requirements-dev.in
+deps-update:  ## Upgrade the active environment within declared dependency ranges
+	python -m pip install --upgrade -r requirements-dev.txt
 
 deps-check:  ## Check for outdated dependencies
 	pip list --outdated
 
-complexity:  ## Check code complexity
-	radon cc src/ -a -nb
-	xenon --max-absolute B --max-modules B --max-average A src/
-
 profile:  ## Profile the main script
 	python -m cProfile -o profile.stats main.py --limit 10
 	python -m pstats profile.stats
-
-docs:  ## Build documentation
-	sphinx-build -b html docs/ docs/_build/
-
-docs-serve:  ## Serve documentation locally
-	sphinx-autobuild docs/ docs/_build/ --port 8000
 
 run:  ## Run the RFC 9460 checker
 	python main.py
@@ -118,18 +109,6 @@ ci:  ## Run CI pipeline locally
 	@make quality
 	@make security
 	@echo "CI pipeline completed successfully!"
-
-setup-githooks:  ## Set up git hooks for the project
-	@echo "#!/bin/sh" > .git/hooks/pre-push
-	@echo "make quality" >> .git/hooks/pre-push
-	@chmod +x .git/hooks/pre-push
-	@echo "Git hooks configured successfully!"
-
-docker-build:  ## Build Docker image
-	docker build -t rfc9460-checker:latest .
-
-docker-run:  ## Run Docker container
-	docker run --rm -v $(PWD)/results:/app/results rfc9460-checker:latest
 
 # Development shortcuts
 f: format

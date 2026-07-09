@@ -2,11 +2,12 @@
 
 import json
 import os
+from importlib import resources
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 
-def load_config(config_path: str = "config.json") -> Dict[str, Any]:
+def load_config(config_path: str = "config.json") -> dict[str, Any]:
     """Load configuration from JSON file.
 
     Args:
@@ -26,42 +27,36 @@ def load_config(config_path: str = "config.json") -> Dict[str, Any]:
         }
 
     with open(config_path) as f:
-        config_data: Dict[str, Any] = json.load(f)
+        config_data: dict[str, Any] = json.load(f)
         return config_data
 
 
 def load_websites(
-    websites_path: str = "top_websites.json",
-) -> List[str]:
-    """Load website list from JSON file.
+    websites_path: str | None = None,
+) -> list[str]:
+    """Load the bundled cohort or an explicit website list.
 
     Args:
-        websites_path: Path to websites JSON file.
+        websites_path: Optional path to a websites JSON file.
 
     Returns:
         List of domain names.
     """
-    if not os.path.exists(websites_path):
-        # Return a small default list for testing
-        return [
-            "google.com",
-            "cloudflare.com",
-            "github.com",
-            "wikipedia.org",
-            "mozilla.org",
-        ]
-
-    with open(websites_path) as f:
-        data = json.load(f)
+    if websites_path is None:
+        source = (
+            resources.files("src.data").joinpath("top_websites.json").read_text(encoding="utf-8")
+        )
+    else:
+        source = Path(websites_path).read_text(encoding="utf-8")
+    data = json.loads(source)
 
     if isinstance(data, list):
-        websites: List[str] = data
+        websites: list[str] = data
         return websites
-    elif isinstance(data, dict) and "websites" in data:
-        websites_from_dict: List[str] = data["websites"]
+    if isinstance(data, dict) and isinstance(data.get("websites"), list):
+        websites_from_dict: list[str] = data["websites"]
         return websites_from_dict
-    else:
-        raise ValueError(f"Invalid websites file format: {websites_path}")
+    raise ValueError(f"Invalid websites file format: {websites_path or 'bundled cohort'}")
 
 
 def get_project_root() -> Path:

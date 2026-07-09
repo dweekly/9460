@@ -1,112 +1,462 @@
-"""Validators for domain names and DNS responses."""
+"""Validation for domain names and RFC 9460 HTTPS/SVCB records."""
 
 import ipaddress
-from typing import Any, Dict, List, Optional
+from collections.abc import Iterable
+from typing import Any
+
+import dns.name
 
 from ..utils.tld_validator import validate_domain_tld
+from .models import (
+    CLIENT_SUPPORTED_PARAM_KEYS,
+    ValidationIssue,
+    param_name_key,
+)
 
 
 def validate_domain(domain: str, check_tld: bool = True) -> bool:
-    """Validate a domain name.
-
-    Args:
-        domain: The domain name to validate.
-        check_tld: Whether to validate TLD against IANA list.
-
-    Returns:
-        True if valid, False otherwise.
-    """
+    """Validate a hostname, optionally including its public top-level domain."""
     if not domain or len(domain) > 253:
         return False
 
-    # Remove trailing dot if present
     if domain.endswith("."):
         domain = domain[:-1]
 
-    # Check each label
     labels = domain.split(".")
-    if not labels:
+    if not labels or (check_tld and len(labels) < 2):
+        return False
+    if check_tld and len(labels[-1]) < 2:
         return False
 
-    # For real domain validation, need at least domain.tld
-    # But allow single labels if not checking TLD (for testing/internal use)
-    if check_tld and len(labels) < 2:
+    if any(not validate_label(label) for label in labels):
         return False
 
-    for label in labels:
-        if not validate_label(label):
-            return False
-
-    # Optionally validate against IANA TLD list
-    if check_tld and not validate_domain_tld(domain):
-        return False
-
-    return True
+    return not check_tld or validate_domain_tld(domain)
 
 
 def validate_label(label: str) -> bool:
-    """Validate a single domain label.
-
-    Args:
-        label: The domain label to validate.
-
-    Returns:
-        True if valid, False otherwise.
-    """
+    """Validate one hostname label."""
     if not label or len(label) > 63:
         return False
-
-    # Label must start with alphanumeric
-    if not label[0].isalnum():
+    if not label[0].isalnum() or not label[-1].isalnum():
         return False
-
-    # Label must end with alphanumeric
-    if not label[-1].isalnum():
-        return False
-
-    # Label can contain alphanumeric and hyphens
-    for char in label:
-        if not (char.isalnum() or char == "-"):
-            return False
-
-    return True
+    return all(char.isalnum() or char == "-" for char in label)
 
 
-def validate_dns_response(response: Dict[str, Any]) -> bool:
-    """Validate a DNS response dictionary.
+def validate_dns_name(name: str, allow_root: bool = False) -> bool:
+    """Validate a DNS name without requiring it to have a public TLD.
 
-    Args:
-        response: The DNS response to validate.
-
-    Returns:
-        True if valid, False otherwise.
+    SVCB targets are DNS names rather than necessarily public hostnames, so the
+    checker must not apply the top-site input validation rules to them.
     """
-    required_fields = ["domain", "subdomain", "full_domain", "has_https_record"]
+    if not isinstance(name, str) or not name:
+        return False
+    if name == ".":
+        return allow_root
+    try:
+        parsed = dns.name.from_text(name)
+    except dns.exception.DNSException, UnicodeError, ValueError:
+        return False
+    wire = parsed.to_wire()
+    return wire is not None and len(wire) <= 255
 
-    for field in required_fields:
-        if field not in response:
+
+def _issue(
+    code: str,
+    severity: str,
+    message: str,
+    key: int | None = None,
+) -> ValidationIssue:
+    issue: ValidationIssue = {
+        "code": code,
+        "severity": severity,  # type: ignore[typeddict-item]
+        "message": message,
+    }
+    if key is not None:
+        issue["key"] = key
+    return issue
+
+
+def _keys_from_record(record: dict[str, Any]) -> set[int]:
+    keys: set[int] = set()
+    details = record.get("param_details", [])
+    if isinstance(details, list):
+        for detail in details:
+            if isinstance(detail, dict) and isinstance(detail.get("key"), int):
+                keys.add(detail["key"])
+
+    params = record.get("params", {})
+    if isinstance(params, dict):
+        for name in params:
+            if isinstance(name, str):
+                key = param_name_key(name)
+                if key is not None:
+                    keys.add(key)
+    return keys
+
+
+def _mandatory_keys(value: Any) -> list[int] | None:
+    if not isinstance(value, (list, tuple)) or not value:
+        return None
+    keys: list[int] = []
+    for item in value:
+        if isinstance(item, int):
+            key = item
+        elif isinstance(item, str):
+            parsed = param_name_key(item)
+            if parsed is None:
+                return None
+            key = parsed
+        else:
+            return None
+        if not 0 <= key <= 65535:
+            return None
+        keys.append(key)
+    return keys
+
+
+def _has_nonempty_value(value: Any) -> bool:
+    if isinstance(value, dict):
+        return "value" in value and _has_nonempty_value(value["value"])
+    if isinstance(value, (bytes, str, list, tuple)):
+        return len(value) > 0
+    return value is not None and value is not False
+
+
+def validate_svcb_record(
+    record: dict[str, Any],
+    *,
+    record_type: str = "HTTPS",
+    owner_name: str | None = None,
+    supported_param_keys: Iterable[int] | None = None,
+) -> dict[str, Any]:
+    """Classify one parsed SVCB-compatible record.
+
+    ``valid_but_incompatible`` means the record is well-formed but names a
+    mandatory key outside the supplied implementation capability set.  Unknown
+    optional keys remain valid and are preserved by the parser.
+    """
+    issues: list[ValidationIssue] = []
+    incompatible = False
+    supported = set(
+        CLIENT_SUPPORTED_PARAM_KEYS if supported_param_keys is None else supported_param_keys
+    )
+    incompatible_keys: set[int] = set()
+    priority = record.get("priority")
+    target = record.get("target")
+    params = record.get("params", {})
+    param_keys = _keys_from_record(record)
+
+    if not validate_priority(priority):
+        issues.append(_issue("invalid_priority", "error", f"Invalid SvcPriority: {priority}"))
+    expected_mode = "alias" if priority == 0 else "service"
+    if record.get("mode") not in (None, expected_mode):
+        issues.append(
+            _issue(
+                "mode_priority_mismatch",
+                "error",
+                f"Mode {record.get('mode')} does not match SvcPriority {priority}",
+            )
+        )
+
+    if not isinstance(target, str) or not validate_dns_name(target, allow_root=True):
+        issues.append(_issue("invalid_target", "error", f"Invalid TargetName: {target}"))
+
+    details = record.get("param_details", [])
+    if isinstance(details, list):
+        for detail in details:
+            if isinstance(detail, dict) and detail.get("parse_error"):
+                issues.append(
+                    _issue(
+                        "malformed_param",
+                        "error",
+                        str(detail["parse_error"]),
+                        detail.get("key") if isinstance(detail.get("key"), int) else None,
+                    )
+                )
+
+    if expected_mode == "alias":
+        if owner_name and isinstance(target, str):
+            owner = owner_name.rstrip(".").lower()
+            alias_target = target.rstrip(".").lower()
+            if target != "." and owner == alias_target:
+                issues.append(
+                    _issue(
+                        "alias_loop",
+                        "warning",
+                        "AliasMode TargetName points back to its owner; resolution will loop",
+                    )
+                )
+        if param_keys:
+            issues.append(
+                _issue(
+                    "alias_params_ignored",
+                    "warning",
+                    "SvcParams on an AliasMode record are ignored",
+                )
+            )
+    elif isinstance(params, dict):
+        mandatory = params.get("mandatory")
+        if "mandatory" in params:
+            mandatory_keys = _mandatory_keys(mandatory)
+            if mandatory_keys is None:
+                issues.append(
+                    _issue(
+                        "invalid_mandatory",
+                        "error",
+                        "mandatory must contain one or more valid, unique SvcParamKeys",
+                        0,
+                    )
+                )
+            else:
+                if len(mandatory_keys) != len(set(mandatory_keys)):
+                    issues.append(
+                        _issue(
+                            "duplicate_mandatory_key",
+                            "error",
+                            "mandatory contains the same SvcParamKey more than once",
+                            0,
+                        )
+                    )
+                if 0 in mandatory_keys:
+                    issues.append(
+                        _issue(
+                            "mandatory_lists_itself",
+                            "error",
+                            "mandatory must not include itself",
+                            0,
+                        )
+                    )
+                for key in mandatory_keys:
+                    if key not in param_keys:
+                        issues.append(
+                            _issue(
+                                "missing_mandatory_param",
+                                "error",
+                                f"mandatory key {key} is not present in this record",
+                                key,
+                            )
+                        )
+                    elif key not in supported:
+                        incompatible = True
+                        incompatible_keys.add(key)
+                        issues.append(
+                            _issue(
+                                "unsupported_mandatory_param",
+                                "incompatible",
+                                f"mandatory key {key} is not supported by this checker",
+                                key,
+                            )
+                        )
+
+        if record_type.upper() == "HTTPS":
+            for key in sorted({2, 3}.intersection(param_keys)):
+                if key not in supported and key not in incompatible_keys:
+                    incompatible = True
+                    incompatible_keys.add(key)
+                    issues.append(
+                        _issue(
+                            "unsupported_automatically_mandatory_param",
+                            "incompatible",
+                            f"HTTPS key {key} is automatically mandatory but unsupported",
+                            key,
+                        )
+                    )
+
+        if "alpn" in params:
+            alpns = params["alpn"]
+            if not isinstance(alpns, list) or not alpns:
+                issues.append(
+                    _issue("invalid_alpn", "error", "alpn must contain at least one ALPN ID", 1)
+                )
+            else:
+                for alpn in alpns:
+                    if not validate_alpn_id(alpn):
+                        issues.append(
+                            _issue(
+                                "invalid_alpn",
+                                "error",
+                                f"Invalid ALPN protocol identifier: {alpn}",
+                                1,
+                            )
+                        )
+
+        if "no-default-alpn" in params:
+            if params["no-default-alpn"] is not True:
+                issues.append(
+                    _issue(
+                        "invalid_no_default_alpn",
+                        "error",
+                        "no-default-alpn must have an empty value",
+                        2,
+                    )
+                )
+            if "alpn" not in params:
+                issues.append(
+                    _issue(
+                        "no_default_alpn_without_alpn",
+                        "error",
+                        "no-default-alpn requires alpn in the same record",
+                        2,
+                    )
+                )
+
+        if "port" in params and (params["port"] is None or not validate_port(params["port"])):
+            issues.append(_issue("invalid_port", "error", f"Invalid port: {params['port']}", 3))
+
+        if "ech" in params and not _has_nonempty_value(params["ech"]):
+            issues.append(_issue("empty_ech", "error", "ech must not be empty", 5))
+
+        for name, validator, key in (
+            ("ipv4hint", validate_ipv4_hint, 4),
+            ("ipv6hint", validate_ipv6_hint, 6),
+        ):
+            if name not in params:
+                continue
+            hints = params[name]
+            if not isinstance(hints, list) or not hints:
+                issues.append(_issue(f"invalid_{name}", "error", f"{name} must not be empty", key))
+            elif any(not isinstance(hint, str) or not validator(hint) for hint in hints):
+                issues.append(
+                    _issue(
+                        f"invalid_{name}",
+                        "error",
+                        f"{name} contains an address of the wrong family",
+                        key,
+                    )
+                )
+
+    has_error = any(issue["severity"] == "error" for issue in issues)
+    if has_error:
+        status = "invalid"
+    elif incompatible:
+        status = "valid_but_incompatible"
+    else:
+        status = "valid"
+
+    return {
+        "status": status,
+        "issues": issues,
+        "compatible": status == "valid",
+        "usable": status == "valid",
+        "record_type": record_type.upper(),
+    }
+
+
+def validate_svcb_rrset(
+    records: list[dict[str, Any]],
+    *,
+    record_type: str = "HTTPS",
+    owner_name: str | None = None,
+    supported_param_keys: Iterable[int] | None = None,
+) -> dict[str, Any]:
+    """Validate a complete RRset and annotate its records in place."""
+    rrset_issues: list[ValidationIssue] = []
+    aliases: list[dict[str, Any]] = []
+    services: list[dict[str, Any]] = []
+
+    for record in records:
+        result = validate_svcb_record(
+            record,
+            record_type=record_type,
+            owner_name=owner_name,
+            supported_param_keys=supported_param_keys,
+        )
+        record["validity"] = result["status"]
+        record["validation_issues"] = result["issues"]
+        record["compatible"] = result["compatible"]
+        record["usable"] = result["usable"]
+        record["ignored"] = False
+        if record.get("mode") == "alias":
+            aliases.append(record)
+        else:
+            services.append(record)
+
+    if aliases and services:
+        rrset_issues.append(
+            _issue(
+                "mixed_modes",
+                "warning",
+                "RRset contains AliasMode and ServiceMode; ServiceMode records are ignored",
+            )
+        )
+        for record in services:
+            record["ignored"] = True
+            record["usable"] = False
+
+    if len(aliases) > 1:
+        rrset_issues.append(
+            _issue(
+                "multiple_alias_records",
+                "warning",
+                "RRset contains more than one AliasMode record",
+            )
+        )
+
+    active_records = aliases if aliases else services
+    record_issues = [
+        issue
+        for record in active_records
+        for issue in record.get("validation_issues", [])
+        if isinstance(issue, dict)
+    ]
+    all_issues = rrset_issues + record_issues
+    if any(record.get("validity") == "invalid" for record in active_records):
+        status = "invalid"
+        for record in active_records:
+            record["usable"] = False
+    elif not any(record.get("usable") for record in active_records) and any(
+        record.get("validity") == "valid_but_incompatible" for record in active_records
+    ):
+        status = "valid_but_incompatible"
+    else:
+        status = "valid"
+
+    return {
+        "status": status,
+        "issues": all_issues,
+        "record_count": len(records),
+        "usable_record_count": sum(bool(record.get("usable")) for record in records),
+        "alias_mode": bool(aliases),
+        "service_mode": bool(services),
+    }
+
+
+def validate_dns_response(response: dict[str, Any]) -> bool:
+    """Return whether a checker response has the expected structural fields."""
+    required_fields = ["domain", "subdomain", "full_domain", "has_https_record"]
+    if any(field not in response for field in required_fields):
+        return False
+
+    if response.get("schema_version") == 2:
+        v2_fields = ["record_type", "query_status", "records", "validation_status"]
+        if any(field not in response for field in v2_fields):
+            return False
+        if not isinstance(response["records"], list):
             return False
 
-    # If has_https_record is True, check for additional fields
     if response.get("has_https_record"):
-        https_fields = ["https_priority", "https_target"]
-        for field in https_fields:
-            if field not in response or response[field] is None:
-                return False
-
+        if response.get("records"):
+            return True
+        return (
+            response.get("https_priority") is not None and response.get("https_target") is not None
+        )
     return True
+
+
+def validate_alpn_id(protocol: Any) -> bool:
+    """Validate the RFC 9460 wire-size rule for an ALPN identifier."""
+    if not isinstance(protocol, str):
+        return False
+    try:
+        size = len(protocol.encode("utf-8"))
+    except UnicodeError:
+        return False
+    return 1 <= size <= 255
 
 
 def validate_alpn_protocol(protocol: str) -> bool:
-    """Validate an ALPN protocol identifier.
-
-    Args:
-        protocol: The ALPN protocol identifier.
-
-    Returns:
-        True if valid, False otherwise.
-    """
-    # Common valid ALPN protocols
+    """Validate a commonly deployed ALPN protocol (legacy helper API)."""
     valid_protocols = {
         "http/0.9",
         "http/1.0",
@@ -126,176 +476,120 @@ def validate_alpn_protocol(protocol: str) -> bool:
         "doq",
         "doq-i00",
     }
-
     return protocol in valid_protocols or protocol.startswith("h3-")
 
 
 def validate_ipv4_hint(ip_str: str) -> bool:
-    """Validate an IPv4 hint address.
-
-    Args:
-        ip_str: The IPv4 address string.
-
-    Returns:
-        True if valid, False otherwise.
-    """
+    """Return whether a hint is an IPv4 address."""
     try:
         ipaddress.IPv4Address(ip_str)
         return True
-    except (ipaddress.AddressValueError, ValueError):
+    except ipaddress.AddressValueError, ValueError:
         return False
 
 
 def validate_ipv6_hint(ip_str: str) -> bool:
-    """Validate an IPv6 hint address.
-
-    Args:
-        ip_str: The IPv6 address string.
-
-    Returns:
-        True if valid, False otherwise.
-    """
+    """Return whether a hint is an IPv6 address."""
     try:
         ipaddress.IPv6Address(ip_str)
         return True
-    except (ipaddress.AddressValueError, ValueError):
+    except ipaddress.AddressValueError, ValueError:
         return False
 
 
-def validate_port(port: Optional[int]) -> bool:
-    """Validate a port number.
-
-    Args:
-        port: The port number.
-
-    Returns:
-        True if valid or None, False otherwise.
-    """
+def validate_port(port: int | None) -> bool:
+    """Validate the RFC's inclusive 0-65535 SvcParam port range."""
     if port is None:
         return True
-    return isinstance(port, int) and 1 <= port <= 65535
+    return isinstance(port, int) and not isinstance(port, bool) and 0 <= port <= 65535
 
 
-def validate_priority(priority: Optional[int]) -> bool:
-    """Validate an HTTPS/SVCB priority value.
-
-    Args:
-        priority: The priority value.
-
-    Returns:
-        True if valid, False otherwise.
-    """
-    if priority is None:
-        return False
-    return isinstance(priority, int) and 0 <= priority <= 65535
+def validate_priority(priority: int | None) -> bool:
+    """Validate a SvcPriority value."""
+    return isinstance(priority, int) and not isinstance(priority, bool) and 0 <= priority <= 65535
 
 
-def validate_scan_result(result: Dict[str, Any]) -> List[str]:
-    """Validate a complete scan result and return list of issues.
-
-    Args:
-        result: The scan result dictionary.
-
-    Returns:
-        List of validation issues (empty if valid).
-    """
-    issues = []
-
-    # Check required fields
-    required_fields = [
-        "domain",
-        "subdomain",
-        "full_domain",
-        "has_https_record",
-    ]
-
-    for field in required_fields:
+def validate_scan_result(result: dict[str, Any]) -> list[str]:
+    """Validate one complete observation and return human-readable issues."""
+    issues: list[str] = []
+    for field in ["domain", "subdomain", "full_domain", "has_https_record"]:
         if field not in result:
             issues.append(f"Missing required field: {field}")
 
-    # Validate domain fields
-    if "domain" in result and not validate_domain(result["domain"]):
+    record_type = str(result.get("record_type", "HTTPS")).upper()
+    name_validator = validate_dns_name if record_type == "SVCB" else validate_domain
+    if "domain" in result and not name_validator(result["domain"]):
         issues.append(f"Invalid domain: {result['domain']}")
-
-    if "full_domain" in result and not validate_domain(result["full_domain"]):
+    if "full_domain" in result and not name_validator(result["full_domain"]):
         issues.append(f"Invalid full_domain: {result['full_domain']}")
-
-    # Validate subdomain value
-    if "subdomain" in result and result["subdomain"] not in ["root", "www"]:
+    if (
+        record_type == "HTTPS"
+        and "subdomain" in result
+        and result["subdomain"] not in ["root", "www"]
+    ):
         issues.append(f"Invalid subdomain value: {result['subdomain']}")
 
-    # If has HTTPS record, validate additional fields
-    if result.get("has_https_record"):
-        if "https_priority" in result:
-            if not validate_priority(result["https_priority"]):
-                issues.append(f"Invalid HTTPS priority: {result['https_priority']}")
-
+    records = result.get("records")
+    if isinstance(records, list) and records:
+        rrset = validate_svcb_rrset(
+            records,
+            record_type=record_type,
+            owner_name=result.get("owner_name") or result.get("full_domain"),
+        )
+        for issue in rrset["issues"]:
+            if issue["severity"] == "error":
+                issues.append(f"RFC 9460 {issue['code']}: {issue['message']}")
+    elif result.get("has_https_record"):
+        if "https_priority" in result and not validate_priority(result["https_priority"]):
+            issues.append(f"Invalid HTTPS priority: {result['https_priority']}")
         if "https_target" in result:
             target = result["https_target"]
-            if target and not validate_domain(str(target).rstrip(".")):
+            if target and not validate_dns_name(str(target), allow_root=True):
                 issues.append(f"Invalid HTTPS target: {target}")
-
-        # Validate ALPN protocols
-        if "alpn_protocols" in result and result["alpn_protocols"]:
-            protocols = result["alpn_protocols"].split(",")
-            for protocol in protocols:
-                if not validate_alpn_protocol(protocol.strip()):
+        if result.get("alpn_protocols"):
+            for protocol in result["alpn_protocols"].split(","):
+                if not validate_alpn_id(protocol.strip()):
                     issues.append(f"Invalid ALPN protocol: {protocol}")
-
-        # Validate port
         if "port" in result and not validate_port(result["port"]):
             issues.append(f"Invalid port: {result['port']}")
+        for field, validator, label in (
+            ("ipv4hint", validate_ipv4_hint, "IPv4"),
+            ("ipv6hint", validate_ipv6_hint, "IPv6"),
+        ):
+            if result.get(field):
+                for hint in str(result[field]).split(","):
+                    if not validator(hint.strip()):
+                        issues.append(f"Invalid {label} hint: {hint}")
 
-        # Validate IP hints
-        if "ipv4hint" in result and result["ipv4hint"]:
-            if not validate_ipv4_hint(result["ipv4hint"]):
-                issues.append(f"Invalid IPv4 hint: {result['ipv4hint']}")
-
-        if "ipv6hint" in result and result["ipv6hint"]:
-            if not validate_ipv6_hint(result["ipv6hint"]):
-                issues.append(f"Invalid IPv6 hint: {result['ipv6hint']}")
-
-    # Validate boolean fields
-    boolean_fields = ["has_https_record", "has_http3", "ech_config"]
-    for field in boolean_fields:
+    for field in ["has_https_record", "has_svcb_record", "has_http3", "ech_config"]:
         if field in result and not isinstance(result[field], bool):
             issues.append(f"Field {field} should be boolean, got {type(result[field]).__name__}")
-
     return issues
 
 
-def validate_dataset(data: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Validate an entire dataset and return quality report.
-
-    Args:
-        data: List of scan results.
-
-    Returns:
-        Dictionary with validation statistics and issues.
-    """
+def validate_dataset(data: list[dict[str, Any]]) -> dict[str, Any]:
+    """Validate a dataset and return a compact quality report."""
     total_records = len(data)
-    invalid_records = []
-    all_issues = []
-    issue_counts: Dict[str, int] = {}
+    invalid_records: list[int] = []
+    all_issues: list[str] = []
+    issue_counts: dict[str, int] = {}
 
-    for i, record in enumerate(data):
+    for index, record in enumerate(data):
         issues = validate_scan_result(record)
         if issues:
-            invalid_records.append(i)
+            invalid_records.append(index)
             all_issues.extend(issues)
             for issue in issues:
-                # Extract issue type
                 issue_type = issue.split(":")[0]
                 issue_counts[issue_type] = issue_counts.get(issue_type, 0) + 1
 
+    valid_records = total_records - len(invalid_records)
     return {
         "total_records": total_records,
-        "valid_records": total_records - len(invalid_records),
+        "valid_records": valid_records,
         "invalid_records": len(invalid_records),
-        "validity_rate": (
-            (total_records - len(invalid_records)) / total_records * 100 if total_records > 0 else 0
-        ),
-        "invalid_record_indices": invalid_records[:10],  # First 10 invalid
+        "validity_rate": valid_records / total_records * 100 if total_records else 0,
+        "invalid_record_indices": invalid_records[:10],
         "issue_counts": issue_counts,
-        "sample_issues": all_issues[:10],  # First 10 issues
+        "sample_issues": all_issues[:10],
     }

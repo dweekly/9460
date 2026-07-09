@@ -1,10 +1,10 @@
-"""Report generation for RFC 9460 compliance analysis."""
+"""Human-readable reports for RFC 9460 adoption measurements."""
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pandas as pd
 from rich.console import Console
@@ -12,291 +12,200 @@ from rich.table import Table
 
 from .metrics import (
     analyze_alpn_protocols,
-    calculate_compliance_metrics,
     calculate_error_statistics,
+    calculate_metrics,
     calculate_priority_distribution,
-    identify_top_performers,
+    identify_feature_leaders,
 )
 
 logger = logging.getLogger(__name__)
 console = Console()
 
 
-class ComplianceReporter:
-    """Generate reports for RFC 9460 compliance analysis."""
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
-    def __init__(self, output_dir: Optional[Path] = None):
-        """Initialize the reporter.
 
-        Args:
-            output_dir: Directory for output files. Defaults to 'results/'.
-        """
+def _json_default(value: Any) -> Any:
+    if hasattr(value, "item"):
+        return value.item()
+    if hasattr(value, "tolist"):
+        return value.tolist()
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
+class AdoptionReporter:
+    """Generate optional CSV, JSON, Markdown, and console adoption reports."""
+
+    def __init__(self, output_dir: Path | None = None) -> None:
+        """Initialize a reporter writing to ``output_dir`` or ``results``."""
         self.output_dir = output_dir or Path("results")
-        self.output_dir.mkdir(exist_ok=True)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
 
-    def generate_csv_report(
-        self, data: List[Dict[str, Any]], timestamp: Optional[str] = None
-    ) -> Path:
-        """Generate CSV report from scan results.
-
-        Args:
-            data: List of scan results.
-            timestamp: Optional timestamp for filename.
-
-        Returns:
-            Path to generated CSV file.
-        """
-        if not timestamp:
-            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
-        filename = f"rfc9460_compliance_{timestamp}.csv"
-        filepath = self.output_dir / filename
-
-        df = pd.DataFrame(data)
-        df.to_csv(filepath, index=False)
-        logger.info(f"CSV report saved to {filepath}")
-
+    def generate_csv_report(self, data: list[dict[str, Any]], timestamp: str | None = None) -> Path:
+        """Write the raw observations as an optional CSV report."""
+        timestamp = timestamp or datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        filepath = self.output_dir / f"rfc9460_scan_{timestamp}.csv"
+        pd.DataFrame(data).to_csv(filepath, index=False)
+        logger.info("CSV report saved to %s", filepath)
         return filepath
 
-    def generate_json_report(self, data: pd.DataFrame, timestamp: Optional[str] = None) -> Path:
-        """Generate JSON report with comprehensive metrics.
-
-        Args:
-            data: DataFrame with scan results.
-            timestamp: Optional timestamp for filename.
-
-        Returns:
-            Path to generated JSON file.
-        """
-        if not timestamp:
-            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
-        metrics = calculate_compliance_metrics(data)
-        alpn_dist = analyze_alpn_protocols(data)
-        priority_dist = calculate_priority_distribution(data)
-        top_performers = identify_top_performers(data)
-        error_stats = calculate_error_statistics(data)
-
+    def generate_json_report(self, data: pd.DataFrame, timestamp: str | None = None) -> Path:
+        """Write an optional JSON adoption summary."""
+        timestamp = timestamp or datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        metrics = calculate_metrics(data)
         report = {
+            "schema_version": 2,
             "metadata": {
-                "version": "1.0.0",
-                "scan_date": datetime.now().isoformat(),
-                "total_domains": len(data),
+                "report_type": "adoption_summary",
+                "scan_date": _now(),
+                "domains": metrics["denominators"]["domains"],
             },
             "metrics": metrics,
             "distributions": {
-                "alpn_protocols": alpn_dist,
-                "priorities": priority_dist,
+                "alpn_protocols": analyze_alpn_protocols(data),
+                "priorities": calculate_priority_distribution(data),
             },
-            "top_performers": [
-                {"domain": domain, "score": score} for domain, score in top_performers
-            ],
-            "error_statistics": error_stats,
+            "feature_leaders": identify_feature_leaders(data),
+            "error_statistics": calculate_error_statistics(data),
         }
-
-        filename = f"rfc9460_analysis_{timestamp}.json"
-        filepath = self.output_dir / filename
-
-        # Convert numpy types to Python native types for JSON serialization
-        def convert_types(obj: Any) -> Any:
-            """Convert numpy types to native Python types."""
-            if isinstance(obj, dict):
-                return {k: convert_types(v) for k, v in obj.items()}
-            elif isinstance(obj, list):
-                return [convert_types(v) for v in obj]
-            elif hasattr(obj, "item"):  # numpy scalar
-                return obj.item()
-            elif hasattr(obj, "tolist"):  # numpy array
-                return obj.tolist()
-            else:
-                return obj
-
-        report_json = convert_types(report)
-
-        with open(filepath, "w") as f:
-            json.dump(report_json, f, indent=2)
-
-        logger.info(f"JSON report saved to {filepath}")
+        filepath = self.output_dir / f"rfc9460_analysis_{timestamp}.json"
+        with filepath.open("w", encoding="utf-8") as output:
+            json.dump(report, output, indent=2, sort_keys=True, default=_json_default)
+            output.write("\n")
+        logger.info("JSON report saved to %s", filepath)
         return filepath
 
     def print_summary_table(self, data: pd.DataFrame) -> None:
-        """Print summary table to console.
+        """Print explicit adoption counts and denominators to the console."""
+        metrics = calculate_metrics(data)
+        adoption = metrics["adoption"]
+        features = metrics["features"]
 
-        Args:
-            data: DataFrame with scan results.
-        """
-        metrics = calculate_compliance_metrics(data)
-
-        # Create summary table
-        table = Table(title="RFC 9460 Compliance Summary")
+        table = Table(title="RFC 9460 Adoption Summary")
         table.add_column("Metric", style="cyan")
-        table.add_column("Root Domains", style="green")
-        table.add_column("WWW Domains", style="green")
+        table.add_column("Count", justify="right", style="green")
+        table.add_column("Denominator", justify="right")
+        table.add_column("Percentage", justify="right")
 
-        # Get root and www specific data
-        root_data = data[data["subdomain"] == "root"]
-        www_data = data[data["subdomain"] == "www"]
-
-        # Total checked
-        table.add_row(
-            "Total Checked",
-            str(len(root_data)),
-            str(len(www_data)),
-        )
-
-        # Has HTTPS record
-        root_https = root_data["has_https_record"].sum()
-        www_https = www_data["has_https_record"].sum()
-        table.add_row(
-            "Has HTTPS Record",
-            f"{root_https} ({metrics['adoption']['root_adoption']}%)",
-            f"{www_https} ({metrics['adoption']['www_adoption']}%)",
-        )
-
-        # HTTP/3 support
-        root_http3 = root_data["has_http3"].sum()
-        www_http3 = www_data["has_http3"].sum()
-        table.add_row(
-            "Supports HTTP/3",
-            f"{root_http3} ({root_http3/len(root_data)*100:.1f}%)",
-            f"{www_http3} ({www_http3/len(www_data)*100:.1f}%)",
-        )
-
-        # ECH config
-        root_ech = root_data["ech_config"].sum()
-        www_ech = www_data["ech_config"].sum()
-        table.add_row(
-            "Has ECH Config",
-            f"{root_ech} ({root_ech/len(root_data)*100:.1f}%)",
-            f"{www_ech} ({www_ech/len(www_data)*100:.1f}%)",
-        )
-
-        # Custom port
-        root_port = root_data["port"].notna().sum()
-        www_port = www_data["port"].notna().sum()
-        table.add_row("Custom Port", str(root_port), str(www_port))
-
-        # IPv4 hints
-        root_ipv4 = root_data["ipv4hint"].notna().sum()
-        www_ipv4 = www_data["ipv4hint"].notna().sum()
-        table.add_row("IPv4 Hints", str(root_ipv4), str(www_ipv4))
-
-        # IPv6 hints
-        root_ipv6 = root_data["ipv6hint"].notna().sum()
-        www_ipv6 = www_data["ipv6hint"].notna().sum()
-        table.add_row("IPv6 Hints", str(root_ipv6), str(www_ipv6))
-
+        rows = [
+            ("HTTPS records", adoption["https"]),
+            ("Root HTTPS records", adoption["root_https"]),
+            ("WWW HTTPS records", adoption["www_https"]),
+            ("SVCB records", adoption["svcb"]),
+            ("H3 advertised by usable HTTPS", features["h3_advertised"]),
+            ("ECH advertised by usable HTTPS", features["ech_advertised"]),
+        ]
+        for label, metric in rows:
+            table.add_row(
+                label,
+                str(metric["count"]),
+                str(metric["denominator"]),
+                f"{metric['percentage']:.2f}%",
+            )
         console.print(table)
 
-        # Print top performers
-        top_performers = identify_top_performers(data, top_n=5)
-        if top_performers:
-            console.print("\n[bold cyan]Top 5 RFC 9460 Compliant Domains:[/bold cyan]")
-            for i, (domain, score) in enumerate(top_performers, 1):
-                console.print(f"  {i}. {domain}: {score:.1f}/100")
+        leaders = identify_feature_leaders(data, top_n=5)
+        if leaders:
+            console.print(
+                "\n[bold cyan]Domains with the broadest observed feature sets:[/bold cyan]"
+            )
+            for leader in leaders:
+                features_text = ", ".join(leader["features"]) or "record only"
+                console.print(f"  {leader['domain']}: {features_text}")
 
-    def generate_markdown_report(self, data: pd.DataFrame, timestamp: Optional[str] = None) -> Path:
-        """Generate markdown report for documentation.
+    def generate_markdown_report(self, data: pd.DataFrame, timestamp: str | None = None) -> Path:
+        """Write an optional human-readable Markdown adoption report."""
+        timestamp = timestamp or datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        metrics = calculate_metrics(data)
+        adoption = metrics["adoption"]
+        features = metrics["features"]
+        denominators = metrics["denominators"]
 
-        Args:
-            data: DataFrame with scan results.
-            timestamp: Optional timestamp.
+        lines = [
+            "# RFC 9460 Adoption Report",
+            "",
+            f"Generated: {_now()}",
+            "",
+            "This report measures record and optional-feature adoption; "
+            "it is not a compliance score.",
+            "",
+            "## Summary",
+            "",
+            f"- Domains in scan: {denominators['domains']}",
+            f"- HTTPS names queried: {denominators['https_names']}",
+            f"- SVCB names queried: {denominators['svcb_names']}",
+            "",
+            "## Record adoption",
+            "",
+            "| Metric | Count | Denominator | Percentage |",
+            "|---|---:|---:|---:|",
+        ]
+        for label, metric in (
+            ("HTTPS", adoption["https"]),
+            ("Root HTTPS", adoption["root_https"]),
+            ("WWW HTTPS", adoption["www_https"]),
+            ("SVCB", adoption["svcb"]),
+        ):
+            lines.append(
+                f"| {label} | {metric['count']} | {metric['denominator']} | "
+                f"{metric['percentage']:.2f}% |"
+            )
 
-        Returns:
-            Path to generated markdown file.
-        """
-        if not timestamp:
-            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        lines.extend(
+            [
+                "",
+                "## Optional features among usable HTTPS RRsets",
+                "",
+                "| Feature | Count | Denominator | Percentage |",
+                "|---|---:|---:|---:|",
+            ]
+        )
+        for name, metric in features.items():
+            lines.append(
+                f"| {name.replace('_', ' ').title()} | {metric['count']} | "
+                f"{metric['denominator']} | {metric['percentage']:.2f}% |"
+            )
 
-        metrics = calculate_compliance_metrics(data)
-        top_performers = identify_top_performers(data, top_n=10)
+        leaders = identify_feature_leaders(data)
+        lines.extend(
+            [
+                "",
+                "## Feature leaders",
+                "",
+                "| Domain | HTTPS RRsets | Observed features |",
+                "|---|---:|---|",
+            ]
+        )
+        for leader in leaders:
+            lines.append(
+                f"| {leader['domain']} | {leader['https_rrsets']} | "
+                f"{', '.join(leader['features']) or 'record only'} |"
+            )
+        lines.extend(["", "---", "*Generated by the RFC 9460 adoption tracker*", ""])
 
-        content = f"""# RFC 9460 Compliance Report
-
-Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-## Summary
-
-- **Total Domains Checked**: {metrics['total_domains_checked']}
-- **Overall Adoption Rate**: {metrics['adoption']['overall_adoption']}%
-- **Average Compliance Score**: {metrics['average_compliance_score']}/100
-
-## Adoption Metrics
-
-| Metric | Percentage | Count |
-|--------|------------|-------|
-| Overall HTTPS Records | {metrics['adoption']['overall_adoption']}% | - |
-| Root Domain Adoption | {metrics['adoption']['root_adoption']}% | - |
-| WWW Subdomain Adoption | {metrics['adoption']['www_adoption']}% | - |
-
-## Feature Distribution
-
-| Feature | Count | Percentage |
-|---------|-------|------------|
-| HTTP/3 Support | {metrics['features']['http3_support']['count']} | \
-{metrics['features']['http3_support']['percentage']}% |
-| ECH Configuration | {metrics['features']['ech_deployment']['count']} | \
-{metrics['features']['ech_deployment']['percentage']}% |
-| Custom Port | {metrics['features']['custom_port']['count']} | \
-{metrics['features']['custom_port']['percentage']}% |
-| IPv4 Hints | {metrics['features']['ipv4_hints']['count']} | \
-{metrics['features']['ipv4_hints']['percentage']}% |
-| IPv6 Hints | {metrics['features']['ipv6_hints']['count']} | \
-{metrics['features']['ipv6_hints']['percentage']}% |
-
-## Top Performers
-
-| Rank | Domain | Compliance Score |
-|------|--------|------------------|
-"""
-
-        for i, (domain, score) in enumerate(top_performers, 1):
-            content += f"| {i} | {domain} | {score:.1f}/100 |\n"
-
-        content += "\n---\n*Report generated by RFC 9460 Compliance Checker*\n"
-
-        filename = f"rfc9460_report_{timestamp}.md"
-        filepath = self.output_dir / filename
-
-        with open(filepath, "w") as f:
-            f.write(content)
-
-        logger.info(f"Markdown report saved to {filepath}")
+        filepath = self.output_dir / f"rfc9460_report_{timestamp}.md"
+        filepath.write_text("\n".join(lines), encoding="utf-8")
+        logger.info("Markdown report saved to %s", filepath)
         return filepath
 
 
+# One-release compatibility alias.  Existing imports continue to work, while
+# all generated language and data use adoption/validity terminology.
+ComplianceReporter = AdoptionReporter
+
+
 def generate_summary_report(
-    data: List[Dict[str, Any]], output_dir: Optional[Path] = None
-) -> Dict[str, Path]:
-    """Generate all report formats from scan results.
-
-    Args:
-        data: List of scan results.
-        output_dir: Optional output directory.
-
-    Returns:
-        Dictionary with paths to generated reports.
-    """
-    reporter = ComplianceReporter(output_dir)
+    data: list[dict[str, Any]], output_dir: Path | None = None
+) -> dict[str, Path]:
+    """Generate optional manual report formats from scan results."""
+    reporter = AdoptionReporter(output_dir)
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
-    # Generate CSV
-    csv_path = reporter.generate_csv_report(data, timestamp)
-
-    # Convert to DataFrame for analysis
-    df = pd.DataFrame(data)
-
-    # Generate JSON report
-    json_path = reporter.generate_json_report(df, timestamp)
-
-    # Generate markdown report
-    md_path = reporter.generate_markdown_report(df, timestamp)
-
-    # Print summary to console
-    reporter.print_summary_table(df)
-
-    return {
-        "csv": csv_path,
-        "json": json_path,
-        "markdown": md_path,
+    dataframe = pd.DataFrame(data)
+    paths = {
+        "csv": reporter.generate_csv_report(data, timestamp),
+        "json": reporter.generate_json_report(dataframe, timestamp),
+        "markdown": reporter.generate_markdown_report(dataframe, timestamp),
     }
+    reporter.print_summary_table(dataframe)
+    return paths

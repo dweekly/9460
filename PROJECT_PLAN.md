@@ -1,290 +1,121 @@
-# RFC 9460 Compliance Analysis Project Plan
+# RFC 9460 Tracker Project Plan
 
-## Project Overview
+`ROADMAP.md` is the durable, stack-ranked source of truth for sequencing. This document describes the implemented target architecture and the decisions an implementation session must preserve.
 
-An open-source research project to analyze RFC 9460 (SVCB/HTTPS DNS Records) adoption across the top 100 websites globally, with results published via GitHub Pages.
+## Outcome
 
-## Project Goals
+The project measures RFC 9460 deployment without treating optional record publication or optional features as compliance requirements. It produces a reproducible daily canonical dataset, a deterministic set of public views, and a dashboard that fails visibly instead of falling back to stale embedded values.
 
-1. **Data Collection**: Systematically query and log HTTPS/SVCB DNS records for top websites
-2. **Analysis**: Identify trends in HTTP/3 adoption, ECH deployment, and DNS-based service discovery
-3. **Visualization**: Create interactive dashboards showing RFC 9460 compliance metrics
-4. **Documentation**: Provide comprehensive analysis and insights for the community
-5. **Automation**: Set up periodic scans to track adoption over time
+The fixed migration cohort contains 101 domains. Each domain produces apex and `www` HTTPS queries. Generic SVCB is measured only when a caller supplies a protocol mapping and the corresponding Attrleaf owner name; it is not queried at website apex or `www`.
 
-## Repository Structure
+## Data flow
 
-```
-rfc9460-check/
-├── src/                        # Source code
-│   ├── checker.py             # Main DNS checking script
-│   ├── analyzer.py            # Data analysis utilities
-│   └── visualizer.py          # Visualization generation
-├── data/                      # Raw and processed data
-│   ├── websites/              # Website lists
-│   ├── raw/                   # Raw scan results (CSV)
-│   └── processed/             # Analyzed data (JSON)
-├── docs/                      # GitHub Pages site
-│   ├── index.html             # Main dashboard
-│   ├── analysis.md            # Detailed analysis
-│   ├── methodology.md         # Research methodology
-│   ├── assets/                # CSS, JS, images
-│   └── data/                  # JSON data for visualizations
-├── notebooks/                 # Jupyter notebooks for analysis
-│   ├── exploratory.ipynb      # Initial data exploration
-│   └── trends.ipynb           # Trend analysis
-├── tests/                     # Unit tests
-├── .github/                   # GitHub-specific files
-│   ├── workflows/             # GitHub Actions
-│   │   ├── scan.yml           # Periodic scanning
-│   │   └── deploy.yml         # Deploy to GitHub Pages
-│   └── ISSUE_TEMPLATE/        # Issue templates
-├── LICENSE                    # MIT License
-├── README.md                  # Project documentation
-├── requirements.txt           # Python dependencies
-└── PROJECT_PLAN.md           # This file
-
+```text
+versioned cohort
+      │
+      ▼
+DNS scanner ──► raw manual report
+                     │
+                     ▼
+              schema-v2 pipeline
+                     │
+        ┌────────────┴────────────┐
+        ▼                         ▼
+compressed canonical scan   deterministic Pages JSON
+data/scans/                 docs/data/{latest,history,changes}.json
+        └────────────┬────────────┘
+                     ▼
+              freshness verifier
+                     │
+                     ▼
+           atomic commit and deploy
 ```
 
-## Development Phases
+The scheduled workflow does not commit redundant daily Markdown or legacy analysis files. Manual CSV/JSON/Markdown reporters remain available for compatibility.
 
-### Phase 1: Foundation (Current)
-- [x] Create basic RFC 9460 checker script
-- [x] Implement CSV logging functionality
-- [x] Build initial website list (top 100)
-- [x] Write project documentation
-- [ ] Initialize git repository with proper structure
-- [ ] Set up Python package structure
-- [ ] Add comprehensive error handling and logging
+## Canonical model
 
-### Phase 2: Data Collection & Analysis
-- [ ] Enhance checker with additional RFC 9460 parameters
-- [ ] Create data analysis scripts
-- [ ] Build Jupyter notebooks for exploration
-- [ ] Generate initial dataset and baseline metrics
-- [ ] Implement data validation and quality checks
-- [ ] Create historical tracking capability
+The schema-v2 snapshot contains:
 
-### Phase 3: Visualization & Reporting
-- [ ] Design GitHub Pages site structure
-- [ ] Create interactive dashboards using D3.js/Chart.js
-- [ ] Build compliance scorecards for each domain
-- [ ] Generate trend charts over time
-- [ ] Create exportable reports (PDF/HTML)
-- [ ] Implement search and filtering capabilities
+- scan identity, timestamps, and actual resolver provenance;
+- a versioned cohort identity, source, date, complete domain list, and count;
+- one observation per queried name and RR type;
+- complete observed RRsets with TTL, priority, target, mode, parameters, unknown keys, and raw presentation text;
+- query status and errors separate from record validation;
+- validation status and machine-readable findings;
+- explicit adoption, validity, compatibility, and optional-feature metrics;
+- distributions and error summaries derived from observations.
 
-### Phase 4: Automation & CI/CD
-- [ ] Set up GitHub Actions for periodic scans (daily/weekly)
-- [ ] Automate data processing and analysis
-- [ ] Auto-generate and deploy visualizations
-- [ ] Create alerts for significant changes
-- [ ] Implement data archival strategy
-- [ ] Set up issue creation for scan failures
+Snapshot serialization is deterministic. The newest decompressed canonical snapshot is content-equivalent to `docs/data/latest.json`. Historical schema-v1 reports are imported only as labeled aggregate entries.
 
-### Phase 5: Community & Enhancement
-- [ ] Add support for custom domain lists
-- [ ] Create API endpoints for data access
-- [ ] Implement contributor guidelines
-- [ ] Add internationalization support
-- [ ] Create educational content about RFC 9460
-- [ ] Build comparison tools with other DNS standards
+## RFC behavior
 
-## Technical Components
+The parser and validator preserve all answers and:
 
-### Data Collection
-- **Primary Tool**: Python with dnspython library
-- **DNS Servers**: Multiple resolvers for redundancy (Google, Cloudflare, OpenDNS)
-- **Rate Limiting**: Throttled queries to respect DNS infrastructure
-- **Error Recovery**: Retry logic with exponential backoff
+- distinguish priority-zero AliasMode from ServiceMode;
+- ignore AliasMode parameters for feature analysis;
+- follow aliases within a fixed bound and report loops;
+- validate targets and service-parameter wire/presentation forms;
+- enforce `mandatory`, including unknown mandatory keys;
+- validate `alpn` and `no-default-alpn` combinations;
+- validate port and IPv4/IPv6 hints;
+- distinguish valid, invalid, and valid-but-incompatible records.
 
-### Data Schema
-```json
-{
-  "metadata": {
-    "version": "1.0.0",
-    "scan_date": "ISO 8601 timestamp",
-    "dns_servers": ["8.8.8.8", "1.1.1.1"],
-    "total_domains": 100
-  },
-  "results": [
-    {
-      "domain": "example.com",
-      "variants": ["root", "www"],
-      "https_record": {
-        "present": true,
-        "priority": 1,
-        "target": "example.com",
-        "parameters": {
-          "alpn": ["h3", "h2"],
-          "port": null,
-          "ipv4hint": ["192.0.2.1"],
-          "ipv6hint": ["2001:db8::1"],
-          "ech": true
-        }
-      },
-      "compliance_score": 85,
-      "features": {
-        "http3": true,
-        "ech": true,
-        "custom_port": false,
-        "ip_hints": true
-      }
-    }
-  ],
-  "statistics": {
-    "total_compliant": 45,
-    "http3_adoption": 38,
-    "ech_deployment": 12,
-    "average_score": 42.5
-  }
-}
-```
+Absent, NXDOMAIN, timeout, and resolver-error outcomes remain distinguishable and are not converted into invalid RFC records.
 
-### Analysis Metrics
+## Metrics and views
 
-#### Primary Metrics
-- **Adoption Rate**: Percentage of domains with HTTPS records
-- **HTTP/3 Support**: Domains advertising "h3" ALPN
-- **ECH Deployment**: Domains with ECH configuration
-- **IP Hint Usage**: Domains providing IPv4/IPv6 hints
+The pipeline reports denominators for domains, observations, queried names, HTTPS/SVCB names and observations, apex/`www` HTTPS names, present RRsets, and usable RRsets. Every adoption, validity, or feature metric stores its count, denominator, and percentage.
 
-#### Secondary Metrics
-- **Priority Distribution**: Analysis of priority values
-- **Target Patterns**: Aliasing vs service mode usage
-- **Port Diversity**: Non-standard port configurations
-- **ALPN Combinations**: Common protocol offerings
+The public views are:
 
-#### Trend Metrics
-- **Adoption Growth**: Month-over-month changes
-- **Feature Velocity**: Speed of new feature adoption
-- **Regional Differences**: Geographic analysis if applicable
-- **Industry Sectors**: Adoption by website category
+- `latest.json`: current canonical observations and metrics;
+- `history.json`: sorted legacy and schema-v2 aggregate history;
+- `changes.json`: gained, lost, and materially changed record identities between comparable detailed snapshots.
 
-## GitHub Pages Site
+The dashboard loads all three at runtime. It contains no scan-specific date, metric, chart data, domain result, or ranking in HTML or JavaScript. It presents adoption, validity, optional features, history, recent changes, and inspectable complete observations.
 
-### Landing Page (index.html)
-- Executive summary dashboard
-- Key statistics cards
-- Adoption timeline chart
-- Top performers leaderboard
-- Quick search functionality
+## Automation contract
 
-### Analysis Page
-- Detailed findings and insights
-- Statistical breakdowns
-- Correlation analysis
-- Industry comparisons
-- Technical deep-dives
+The daily scan workflow:
 
-### Methodology Page
-- Research approach
-- Data collection process
-- Limitations and caveats
-- Reproducibility instructions
-- Citation guidelines
+- runs on a single concurrency group;
+- has repository-content write permission only;
+- writes raw scanner output to ephemeral runner storage;
+- calls `python -m src.analyzer.pipeline build` with the raw input, snapshot directory, Pages directory, legacy history, and cohort;
+- calls `python -m src.analyzer.pipeline verify` before staging output;
+- stages `data/scans/` and `docs/data/` together and creates at most one bot commit;
+- does not trigger itself from that bot commit.
 
-### Interactive Features
-- Domain lookup tool
-- Compliance checker
-- Trend explorer
-- Data export options
-- API documentation
+The Pages workflow checks out the committed state, runs the same verifier, and uploads `docs/` unchanged. It grants only the Pages metadata and deployment permissions required by the official Pages actions. Deployment is blocked when `latest.json`, the newest schema-v2 history entry, `changes.json`, and the canonical snapshot do not identify the same scan.
 
-## Automation Strategy
+## Verification
 
-### GitHub Actions Workflows
+Required automated coverage includes:
 
-#### Daily Scan (`scan.yml`)
-```yaml
-- Runs at 00:00 UTC daily
-- Executes RFC 9460 checker
-- Commits results to data/raw/
-- Triggers analysis pipeline
-```
+- textual and wire-format fixtures for multi-record ServiceMode, AliasMode, aliases, loops, targets, priorities, unknown keys, `mandatory`, ALPN, `no-default-alpn`, ECH, ports, and IP hints;
+- malformed, incompatible, absent, NXDOMAIN, timeout, and resolver-error classifications;
+- denominator regressions proving HTTPS metrics use only queried HTTPS names and remain compatible with legacy files that also contain generic SVCB rows;
+- feature aggregation across complete RRsets;
+- deterministic schema-v2 serialization and round trips;
+- legacy history import without fabricated detail;
+- gained, lost, changed, and first-detailed-scan comparisons;
+- end-to-end raw-input to snapshot/Pages generation and freshness verification;
+- local dashboard loading, charts, filtering, and full-observation inspection;
+- formatting, linting, strict typing, tests, dependency audit, and package build.
 
-#### Analysis Pipeline (`analyze.yml`)
-```yaml
-- Triggered by new scan data
-- Processes raw CSV files
-- Generates statistics
-- Updates visualizations
-- Commits to data/processed/
-```
+## Future telemetry boundary
 
-#### Deploy (`deploy.yml`)
-```yaml
-- Triggered by changes to docs/
-- Builds static site
-- Deploys to GitHub Pages
-- Sends notifications
-```
+The RFC 9460 DNS scanner is one probe family. Planned TLS and HTTP probes use distinct versioned observation types and capability registries.
 
-## Success Metrics
+ECH verification requires an active TLS client and reports advertisement, attempt, acceptance, rejection, or inability to verify. ML-KEM adoption requires evidence from offered and negotiated TLS named groups and distinguishes hybrid from non-hybrid key agreement. HTTP telemetry retains redirects and raw response headers before normalized analysis.
 
-1. **Coverage**: Successfully scan 95%+ of target domains
-2. **Accuracy**: <1% false positive/negative rate
-3. **Performance**: Complete scan in <10 minutes
-4. **Availability**: 99.9% uptime for GitHub Pages site
-5. **Community**: 100+ stars, 10+ contributors within 6 months
-6. **Impact**: Referenced in at least 3 academic/industry papers
+Old observations are interpreted with the registry version stored at collection time. Every TLS observation retains numeric protocol IDs as seen on the wire as well as names resolved from that scan's registry snapshot. Standards and IANA registries are reviewed at least quarterly through December 2028, and changes receive explicit schema or interpretation notes. The July 9, 2026 baseline is NIST FIPS 203 for ML-KEM, `draft-ietf-tls-ecdhe-mlkem-05` for its hybrid ECDHE/TLS 1.3 profile, RFC 9849 for TLS ECH, and RFC 9848 for the ECH SVCB/HTTPS binding. DNS evidence is never used as proof of TLS or HTTP behavior.
 
-## Timeline
+## Fixed assumptions
 
-- **Week 1-2**: Complete Phase 1 & 2
-- **Week 3-4**: Implement Phase 3
-- **Week 5-6**: Deploy Phase 4
-- **Month 2+**: Iterate on Phase 5
-
-## Open Source Considerations
-
-### License
-MIT License for maximum compatibility and adoption
-
-### Contributing Guidelines
-- Pull request templates
-- Code of conduct
-- Development setup instructions
-- Testing requirements
-- Documentation standards
-
-### Community Building
-- Discord/Slack channel
-- Regular blog posts
-- Conference presentations
-- Academic partnerships
-- Industry collaboration
-
-## Risk Mitigation
-
-### Technical Risks
-- **DNS Query Failures**: Multiple resolver fallbacks
-- **Rate Limiting**: Distributed scanning, caching
-- **Data Quality**: Validation, cross-verification
-- **Scalability**: Efficient data structures, pagination
-
-### Project Risks
-- **Maintainer Burnout**: Clear governance, automation
-- **Scope Creep**: Defined milestones, issue triage
-- **Data Privacy**: No PII collection, transparent methods
-- **Sustainability**: Low maintenance design, documentation
-
-## Next Steps
-
-1. Initialize git repository with `.gitignore`
-2. Create GitHub repository with appropriate settings
-3. Set up GitHub Pages branch structure
-4. Implement enhanced error handling in checker
-5. Create first analysis notebook
-6. Design initial visualizations
-7. Write comprehensive test suite
-8. Set up GitHub Actions workflows
-
-## Contact
-
-- GitHub Issues: Primary communication channel
-- Email: [To be added]
-- Twitter: [To be added]
-
----
-
-*This plan is a living document and will be updated as the project evolves.*
+- The December 2024 cohort remains unchanged during core migration.
+- Existing `results/` history remains immutable.
+- Detailed snapshots are committed rather than relying on expiring Actions artifacts.
+- The first schema-v2 scan has no detailed predecessor.
+- Independent per-resolver consensus, cohort refresh, persistent-change alerting, multi-region probes, and data-retention policy remain follow-up work in `ROADMAP.md`.

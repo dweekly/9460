@@ -2,125 +2,83 @@ name: Scheduled RFC 9460 Scan
 
 on:
   schedule:
-    # Run daily at 00:00 UTC
     - cron: '0 0 * * *'
   workflow_dispatch:
-    inputs:
-      domains:
-        description: 'Specific domains to check (comma-separated)'
-        required: false
-        type: string
 
 permissions:
-  contents: write
-  pages: write
-  id-token: write
+  contents: read
+
+concurrency:
+  group: rfc9460-daily-scan
+  cancel-in-progress: false
 
 jobs:
-  scan:
-    name: Scan Domains
+  scan-and-publish:
+    name: Scan, build, and publish data
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      PYTHONUNBUFFERED: '1'
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
-          python-version: '3.11'
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: requirements.txt
 
-      - name: Install dependencies
+      - name: Install project
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          python -m pip install -r requirements.txt
 
-      - name: Run RFC 9460 checker
+      - name: Collect DNS observations
+        id: collect
         run: |
-          if [ -n "${{ github.event.inputs.domains }}" ]; then
-            # Create custom JSON file with specified domains
-            DOMAINS=$(echo "${{ github.event.inputs.domains }}" | tr ',' '\n' | sed 's/^/"/;s/$/"/' | paste -sd ',' -)
-            echo "{\"websites\": [$DOMAINS]}" > custom_domains.json
-            python main.py --websites custom_domains.json --output results
+          scan_output="${RUNNER_TEMP}/rfc9460-scan"
+          mkdir -p "${scan_output}"
+          python main.py \
+            --websites top_websites.json \
+            --output "${scan_output}" \
+            --observations-only
+          raw_input=$(find "${scan_output}" -maxdepth 1 -type f -name 'rfc9460_observations_*.json' | sort | tail -n 1)
+          test -n "${raw_input}"
+          echo "raw_input=${raw_input}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build canonical snapshot and Pages data
+        run: |
+          python -m src.analyzer.pipeline build \
+            --input "${{ steps.collect.outputs.raw_input }}" \
+            --scan-dir data/scans \
+            --pages-dir docs/data \
+            --legacy-dir results \
+            --cohort top_websites.json
+
+      - name: Verify generated data freshness
+        run: |
+          python -m src.analyzer.pipeline verify \
+            --latest docs/data/latest.json \
+            --scan-dir data/scans \
+            --max-age-hours 48
+
+      - name: Commit snapshot and public views together
+        run: |
+          test -s docs/data/latest.json
+          test -s docs/data/history.json
+          test -s docs/data/changes.json
+          test -n "$(find data/scans -maxdepth 1 -type f -name 'rfc9460_scan_*.json.gz' -print -quit)"
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add data/scans docs/data
+          if git diff --staged --quiet; then
+            echo "The verified scan produced no tracked data changes."
           else
-            python main.py --output results
+            git commit -m "Update RFC 9460 observations $(date -u +%Y-%m-%d)"
+            git push
           fi
-
-      - name: Commit results
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add results/
-          git diff --staged --quiet || git commit -m "Add scan results from $(date +%Y-%m-%d)"
-          git push
-
-  analyze:
-    name: Analyze Results
-    needs: scan
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main  # Get latest with new scan results
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Run analysis
-        run: |
-          python -c "
-          import json
-          from pathlib import Path
-
-          # Find latest scan result (JSON files, not CSV)
-          results_dir = Path('results')
-          json_files = list(results_dir.glob('rfc9460_analysis_*.json'))
-          if not json_files:
-              print('No scan results found')
-              exit(1)
-
-          latest_file = max(json_files, key=lambda p: p.stat().st_mtime)
-          print(f'Analyzing {latest_file}')
-
-          # Load scan data
-          with open(latest_file) as f:
-              data = json.load(f)
-
-          metrics = data['metrics']
-          features = metrics['features']
-
-          # Generate statistics
-          stats = {
-              'scan_date': data['metadata']['scan_date'],
-              'total_domains': metrics['unique_domains'],
-              'https_adoption': metrics['adoption']['overall_adoption'] / 100,
-              'http3_support': features['http3_support']['percentage'] / 100,
-              'ech_deployment': features['ech_deployment']['percentage'] / 100,
-              'average_compliance_score': metrics['average_compliance_score'],
-              'total_domains_checked': metrics['total_domains_checked'],
-          }
-
-          # Save statistics
-          stats_file = Path('data/processed/latest_stats.json')
-          stats_file.parent.mkdir(parents=True, exist_ok=True)
-          with open(stats_file, 'w') as f:
-              json.dump(stats, f, indent=2)
-
-          print(f'Statistics saved to {stats_file}')
-          print(f'HTTPS Adoption: {stats[\"https_adoption\"]*100:.1f}%')
-          print(f'HTTP/3 Support: {stats[\"http3_support\"]*100:.1f}%')
-          print(f'ECH Deployment: {stats[\"ech_deployment\"]*100:.1f}%')
-          "
-
-      - name: Commit analysis
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add data/processed/
-          git diff --staged --quiet || git commit -m "Update analysis results from $(date +%Y-%m-%d)"
-          git push

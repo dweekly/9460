@@ -1,10 +1,14 @@
 """Unit tests for validator module."""
 
 from src.rfc9460_checker.validator import (
+    validate_alpn_id,
     validate_alpn_protocol,
     validate_dns_response,
     validate_domain,
     validate_label,
+    validate_port,
+    validate_svcb_record,
+    validate_svcb_rrset,
 )
 
 
@@ -161,3 +165,183 @@ class TestValidateAlpnProtocol:
 
         for protocol in invalid_protocols:
             assert not validate_alpn_protocol(protocol), f"Should reject {protocol}"
+
+
+class TestValidateSvcb:
+    """RFC 9460 validity and client-compatibility classification."""
+
+    def test_arbitrary_nonempty_alpn_id_is_rfc_valid(self) -> None:
+        """RFC validity is not limited to a hard-coded ALPN registry subset."""
+        assert validate_alpn_id("example-protocol")
+        assert not validate_alpn_id("")
+        assert not validate_alpn_id("x" * 256)
+
+    def test_no_default_alpn_requires_alpn(self) -> None:
+        """A no-default-alpn parameter without alpn is self-inconsistent."""
+        record = {
+            "priority": 1,
+            "target": ".",
+            "mode": "service",
+            "params": {"no-default-alpn": True},
+            "param_details": [{"key": 2, "name": "no-default-alpn"}],
+        }
+
+        result = validate_svcb_record(record, owner_name="example.com")
+
+        assert result["status"] == "invalid"
+        assert {issue["code"] for issue in result["issues"]} == {"no_default_alpn_without_alpn"}
+
+    def test_missing_mandatory_key_is_invalid(self) -> None:
+        """Every key named by mandatory must occur in the same record."""
+        record = {
+            "priority": 1,
+            "target": "svc.example.",
+            "mode": "service",
+            "params": {"mandatory": ["alpn"]},
+            "param_details": [{"key": 0, "name": "mandatory"}],
+        }
+
+        result = validate_svcb_record(record)
+
+        assert result["status"] == "invalid"
+        assert any(issue["code"] == "missing_mandatory_param" for issue in result["issues"])
+
+    def test_unknown_optional_key_is_valid_but_mandatory_is_incompatible(self) -> None:
+        """Unknown optional keys are ignored while unknown mandatory keys are not."""
+        base = {
+            "priority": 1,
+            "target": "svc.example.",
+            "mode": "service",
+            "params": {"key65400": "opaque"},
+            "param_details": [{"key": 65400, "name": "key65400"}],
+        }
+        assert validate_svcb_record(base)["status"] == "valid"
+
+        mandatory = {
+            **base,
+            "params": {"mandatory": ["key65400"], "key65400": "opaque"},
+            "param_details": [
+                {"key": 0, "name": "mandatory"},
+                {"key": 65400, "name": "key65400"},
+            ],
+        }
+        assert validate_svcb_record(mandatory)["status"] == "valid_but_incompatible"
+
+    def test_alias_params_are_ignored_without_becoming_invalid(self) -> None:
+        """Parameters on an AliasMode record produce a warning and no feature claims."""
+        alias = {
+            "priority": 0,
+            "target": "alias.example.",
+            "mode": "alias",
+            "params": {"alpn": ["h3"]},
+            "param_details": [{"key": 1, "name": "alpn"}],
+        }
+
+        result = validate_svcb_record(alias, owner_name="example.com")
+
+        assert result["status"] == "valid"
+        assert result["issues"][0]["code"] == "alias_params_ignored"
+
+    def test_mixed_mode_rrset_ignores_service_records(self) -> None:
+        """Ignored invalid ServiceMode records do not poison an AliasMode RRset."""
+        records = [
+            {
+                "priority": 0,
+                "target": "alias.example.",
+                "mode": "alias",
+                "params": {},
+                "param_details": [],
+            },
+            {
+                "priority": 1,
+                "target": ".",
+                "mode": "service",
+                "params": {"no-default-alpn": True},
+                "param_details": [{"key": 2, "name": "no-default-alpn"}],
+            },
+        ]
+
+        result = validate_svcb_rrset(records, owner_name="example.com")
+
+        assert result["status"] == "valid"
+        assert records[0]["usable"] is True
+        assert records[1]["ignored"] is True
+        assert records[1]["usable"] is False
+        assert records[1]["validity"] == "invalid"
+        assert not any(
+            issue["code"] == "no_default_alpn_without_alpn" for issue in result["issues"]
+        )
+        assert any(issue["code"] == "mixed_modes" for issue in result["issues"])
+
+    def test_alias_self_loop_is_a_resolution_warning(self) -> None:
+        """A direct AliasMode loop is valid RDATA but unusable during resolution."""
+        record = {
+            "priority": 0,
+            "target": "example.com.",
+            "mode": "alias",
+            "params": {},
+            "param_details": [],
+        }
+        result = validate_svcb_record(record, owner_name="example.com")
+        assert result["status"] == "valid"
+        assert result["issues"][0]["code"] == "alias_loop"
+        assert result["issues"][0]["severity"] == "warning"
+
+    def test_empty_supported_set_and_https_automatic_mandatory_keys(self) -> None:
+        """An explicit empty capability set is honored for mandatory HTTPS keys."""
+        explicit = {
+            "priority": 1,
+            "target": ".",
+            "mode": "service",
+            "params": {"mandatory": ["alpn"], "alpn": ["h2"]},
+            "param_details": [
+                {"key": 0, "name": "mandatory"},
+                {"key": 1, "name": "alpn"},
+            ],
+        }
+        explicit_result = validate_svcb_record(explicit, supported_param_keys=[])
+        assert explicit_result["status"] == "valid_but_incompatible"
+        assert explicit_result["issues"][0]["key"] == 1
+
+        automatic = {
+            "priority": 1,
+            "target": ".",
+            "mode": "service",
+            "params": {"port": 8443},
+            "param_details": [{"key": 3, "name": "port"}],
+        }
+        https_result = validate_svcb_record(automatic, record_type="HTTPS", supported_param_keys=[])
+        svcb_result = validate_svcb_record(automatic, record_type="SVCB", supported_param_keys=[])
+        assert https_result["status"] == "valid_but_incompatible"
+        assert https_result["issues"][0]["code"] == ("unsupported_automatically_mandatory_param")
+        assert svcb_result["status"] == "valid"
+
+    def test_empty_ech_is_invalid(self) -> None:
+        """An empty ECHConfigList cannot be counted as a usable ECH deployment."""
+        record = {
+            "priority": 1,
+            "target": ".",
+            "mode": "service",
+            "params": {"ech": {"encoding": "base64", "value": ""}},
+            "param_details": [{"key": 5, "name": "ech"}],
+        }
+        result = validate_svcb_record(record)
+        assert result["status"] == "invalid"
+        assert result["issues"][0]["code"] == "empty_ech"
+
+    def test_port_zero_and_hint_families(self) -> None:
+        """Port zero is legal, while an address hint of the wrong family is not."""
+        assert validate_port(0)
+        record = {
+            "priority": 1,
+            "target": ".",
+            "mode": "service",
+            "params": {"port": 0, "ipv4hint": ["2001:db8::1"]},
+            "param_details": [
+                {"key": 3, "name": "port"},
+                {"key": 4, "name": "ipv4hint"},
+            ],
+        }
+        result = validate_svcb_record(record)
+        assert result["status"] == "invalid"
+        assert any(issue["code"] == "invalid_ipv4hint" for issue in result["issues"])

@@ -2,7 +2,6 @@
 
 import logging
 from pathlib import Path
-from typing import Optional, Set
 from urllib.request import urlopen
 
 logger = logging.getLogger(__name__)
@@ -14,10 +13,10 @@ IANA_TLD_URL = "https://data.iana.org/TLD/tlds-alpha-by-domain.txt"
 TLD_CACHE_FILE = Path.home() / ".cache" / "rfc9460_checker" / "tlds.txt"
 
 # Global cache for TLDs
-_tld_cache: Optional[Set[str]] = None
+_tld_cache: set[str] | None = None
 
 
-def fetch_tld_list() -> Set[str]:
+def fetch_tld_list() -> set[str]:
     """Fetch the authoritative TLD list from IANA.
 
     Returns:
@@ -43,7 +42,7 @@ def fetch_tld_list() -> Set[str]:
         return set()
 
 
-def save_tld_cache(tlds: Set[str]) -> None:
+def save_tld_cache(tlds: set[str]) -> None:
     """Save TLD list to cache file.
 
     Args:
@@ -59,7 +58,7 @@ def save_tld_cache(tlds: Set[str]) -> None:
         logger.error(f"Failed to save TLD cache: {e}")
 
 
-def load_tld_cache() -> Optional[Set[str]]:
+def load_tld_cache() -> set[str] | None:
     """Load TLD list from cache file.
 
     Returns:
@@ -88,7 +87,7 @@ def load_tld_cache() -> Optional[Set[str]]:
         return None
 
 
-def get_valid_tlds() -> Set[str]:
+def get_valid_tlds() -> set[str]:
     """Get the set of valid TLDs, using cache if available.
 
     Returns:

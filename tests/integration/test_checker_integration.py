@@ -66,7 +66,7 @@ class TestCheckerIntegration:
             results = await checker.check_domains(domains)
 
             # Verify we got results for all domains and subdomains
-            assert len(results) == 8  # 2 domains × 2 subdomains × 2 record types
+            assert len(results) == 4  # 2 domains × root/www HTTPS names
 
             # Generate reports
             report_paths = generate_summary_report(results, tmp_path)
@@ -82,7 +82,7 @@ class TestCheckerIntegration:
 
             # Load and verify CSV content
             df = pd.read_csv(report_paths["csv"])
-            assert len(df) == 8  # Now includes SVCB records too
+            assert len(df) == 4
             assert "has_https_record" in df.columns
             assert "has_http3" in df.columns
 
@@ -181,7 +181,7 @@ class TestCheckerIntegration:
             results = await checker.check_domains(domains)
 
             # Should have results for all domains
-            assert len(results) == 12  # 3 domains × 2 subdomains × 2 record types
+            assert len(results) == 6  # 3 domains × root/www HTTPS names
 
             # Check that failed domain has error recorded
             fail_results = [r for r in results if r["domain"] == "fail.com"]
