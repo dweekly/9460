@@ -198,7 +198,7 @@
         }
       },
       "domain": "paypal.com",
-      "name": "www.paypal.com.cdn.cloudflare.net",
+      "name": "www.paypal.com",
       "probe_type": "dns",
       "rrtype": "HTTPS",
       "variant": "www"

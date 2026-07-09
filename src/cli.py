@@ -1,7 +1,5 @@
 """Command-line scanner for RFC 9460 adoption and validity observations."""
 
-from __future__ import annotations
-
 import argparse
 import asyncio
 import base64
@@ -9,10 +7,11 @@ import json
 import logging
 import os
 import platform
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from importlib import resources
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any
 
 import dns
 from rich.console import Console
@@ -55,7 +54,7 @@ def _json_default(value: Any) -> Any:
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
-def load_websites(file_path: Optional[str] = None) -> List[str]:
+def load_websites(file_path: str | None = None) -> list[str]:
     """Load and validate a JSON website cohort."""
     if file_path is None:
         source_name = "bundled top_websites.json"
@@ -87,8 +86,8 @@ def load_websites(file_path: Optional[str] = None) -> List[str]:
     return normalized
 
 
-def _failed_observations(domain: str, error: Exception) -> List[Dict[str, Any]]:
-    observations: List[Dict[str, Any]] = []
+def _failed_observations(domain: str, error: Exception) -> list[dict[str, Any]]:
+    observations: list[dict[str, Any]] = []
     for variant in ("root", "www"):
         name = domain if variant == "root" else f"www.{domain}"
         observations.append(
@@ -116,9 +115,9 @@ def _failed_observations(domain: str, error: Exception) -> List[Dict[str, Any]]:
 
 async def check_all_domains(
     domains: Sequence[str], checker: RFC9460Checker
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Collect root and ``www`` HTTPS observations with progress output."""
-    observations: List[Dict[str, Any]] = []
+    observations: list[dict[str, Any]] = []
     last_result = ""
     with console.status("Initializing...") as status:
         for index, domain in enumerate(domains):
@@ -199,7 +198,7 @@ def write_observation_bundle(
     return path
 
 
-async def main_async(args: argparse.Namespace) -> Dict[str, Path]:
+async def main_async(args: argparse.Namespace) -> dict[str, Path]:
     """Run collection and write the requested outputs."""
     domains = load_websites(args.websites)
     if args.limit is not None:
@@ -234,7 +233,7 @@ async def main_async(args: argparse.Namespace) -> Dict[str, Path]:
         completed_at=completed_at,
         resolvers=checker.dns_servers,
     )
-    paths: Dict[str, Path] = {"observations": bundle}
+    paths: dict[str, Path] = {"observations": bundle}
     if not args.observations_only:
         console.print("\n[cyan]Generating optional compatibility reports...[/cyan]")
         paths.update(generate_summary_report(observations, output_dir))
@@ -270,7 +269,7 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[Sequence[str]] = None) -> None:
+def main(argv: Sequence[str] | None = None) -> None:
     """Run the command-line application."""
     args = _parser().parse_args(argv)
     setup_logging(

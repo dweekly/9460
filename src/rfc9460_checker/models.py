@@ -6,7 +6,7 @@ the JSON contract explicit without requiring callers to serialize dataclasses
 or enums.
 """
 
-from typing import Any, Dict, List, Literal, Optional, TypedDict  # noqa: TYP001
+from typing import Any, Literal, TypedDict  # noqa: TYP001
 
 SCHEMA_VERSION = 2
 DEFAULT_MAX_ALIAS_DEPTH = 8
@@ -15,7 +15,7 @@ VALIDATOR_RULESET_VERSION = "2026-07-09.1"
 SVCPARAM_REGISTRY_REFERENCE = "https://www.iana.org/assignments/dns-svcb/dns-svcb.xhtml"
 SVCPARAM_REGISTRY_VERSION = "2026-06-25"
 SVCPARAM_REGISTRY_SNAPSHOT_DATE = "2026-07-09"
-SVCPARAM_REGISTRY_METADATA: Dict[str, str] = {
+SVCPARAM_REGISTRY_METADATA: dict[str, str] = {
     "authority": "IANA",
     "name": "DNS SVCB Service Parameter Keys (SvcParamKeys)",
     "version": SVCPARAM_REGISTRY_VERSION,
@@ -34,7 +34,7 @@ QueryStatus = Literal["present", "no_answer", "nxdomain", "timeout", "error"]
 # IANA registry snapshot.  Registration means that a key has a stable name;
 # it does not imply that this checker implements the corresponding client
 # behavior.  Unknown keys are retained as ``keyNNNNN`` rather than discarded.
-SVCPARAM_REGISTRY: Dict[int, Dict[str, str]] = {
+SVCPARAM_REGISTRY: dict[int, dict[str, str]] = {
     0: {"name": "mandatory", "reference": "RFC 9460, Section 8"},
     1: {"name": "alpn", "reference": "RFC 9460, Section 7.1"},
     2: {"name": "no-default-alpn", "reference": "RFC 9460, Section 7.1"},
@@ -58,8 +58,8 @@ SVCPARAM_REGISTRY: Dict[int, Dict[str, str]] = {
         "reference": "draft-johani-dnsop-svcb-oots-00, Section 5",
     },
 }
-PARAM_KEY_NAMES: Dict[int, str] = {key: entry["name"] for key, entry in SVCPARAM_REGISTRY.items()}
-PARAM_NAME_KEYS: Dict[str, int] = {name: key for key, name in PARAM_KEY_NAMES.items()}
+PARAM_KEY_NAMES: dict[int, str] = {key: entry["name"] for key, entry in SVCPARAM_REGISTRY.items()}
+PARAM_NAME_KEYS: dict[str, int] = {name: key for key, name in PARAM_KEY_NAMES.items()}
 REGISTERED_PARAM_KEYS = frozenset(PARAM_KEY_NAMES)
 DECODED_PARAM_KEYS = frozenset({0, 1, 2, 3, 4, 5, 6})
 CLIENT_SUPPORTED_PARAM_KEYS = frozenset({0, 1, 2, 3, 4, 6})
@@ -79,7 +79,7 @@ class ValidationIssue(TypedDict, total=False):
     code: str
     severity: Literal["error", "warning", "incompatible"]
     message: str
-    key: Optional[int]
+    key: int | None
 
 
 class ParamDetail(TypedDict, total=False):
@@ -91,10 +91,10 @@ class ParamDetail(TypedDict, total=False):
     registered: bool
     decoded: bool
     client_supported: bool
-    registry_reference: Optional[str]
+    registry_reference: str | None
     value: Any
     raw: Any
-    parse_error: Optional[str]
+    parse_error: str | None
 
 
 class SVCBRecord(TypedDict, total=False):
@@ -103,11 +103,11 @@ class SVCBRecord(TypedDict, total=False):
     priority: int
     target: str
     mode: RecordMode
-    params: Dict[str, Any]
-    param_details: List[ParamDetail]
+    params: dict[str, Any]
+    param_details: list[ParamDetail]
     raw: str
     validity: ValidationStatus
-    validation_issues: List[ValidationIssue]
+    validation_issues: list[ValidationIssue]
     compatible: bool
     usable: bool
     ignored: bool
@@ -131,29 +131,29 @@ class DNSObservation(ProbeObservation, total=False):
     domain: str
     subdomain: str
     full_domain: str
-    owner_name: Optional[str]
-    query_name: Optional[str]
-    rrset_owner_name: Optional[str]
+    owner_name: str | None
+    query_name: str | None
+    rrset_owner_name: str | None
     validator_ruleset_version: str
-    svcparam_registry: Dict[str, str]
-    parser_limitations: List[str]
+    svcparam_registry: dict[str, str]
+    parser_limitations: list[str]
     record_type: str
     query_status: QueryStatus
-    query_error: Optional[str]
+    query_error: str | None
     has_record: bool
     has_https_record: bool
     has_svcb_record: bool
-    records: List[SVCBRecord]
+    records: list[SVCBRecord]
     record_count: int
-    ttl: Optional[int]
-    resolver: Optional[str]
-    resolver_port: Optional[int]
-    configured_resolvers: List[str]
-    canonical_name: Optional[str]
-    validation_issues: List[ValidationIssue]
-    resolution_issues: List[ValidationIssue]
-    alias_chain: List[Dict[str, Any]]
-    alias_resolution_status: Optional[str]
+    ttl: int | None
+    resolver: str | None
+    resolver_port: int | None
+    configured_resolvers: list[str]
+    canonical_name: str | None
+    validation_issues: list[ValidationIssue]
+    resolution_issues: list[ValidationIssue]
+    alias_chain: list[dict[str, Any]]
+    alias_resolution_status: str | None
 
 
 def param_key_name(key: int) -> str:
@@ -161,7 +161,7 @@ def param_key_name(key: int) -> str:
     return PARAM_KEY_NAMES.get(key, f"key{key}")
 
 
-def param_name_key(name: str) -> Optional[int]:
+def param_name_key(name: str) -> int | None:
     """Return the numeric key for a registered or ``keyNNNNN`` name."""
     if name in PARAM_NAME_KEYS:
         return PARAM_NAME_KEYS[name]

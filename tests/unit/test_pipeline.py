@@ -103,6 +103,7 @@ def test_normalization_preserves_complete_rrset_and_extensions() -> None:
                     "ttl": 60,
                     "usable": True,
                     "ignored": False,
+                    "record_annotation": "preserve me too",
                 },
             ],
             "validation": {"status": "valid", "issues": []},
@@ -114,7 +115,85 @@ def test_normalization_preserves_complete_rrset_and_extensions() -> None:
     assert observation["records"][0]["params"]["key65400"] == "future"
     assert observation["features"]["h3_advertised"] is True
     assert observation["extensions"]["vendor_annotation"] == "preserve me"
+    assert observation["records"][0]["extensions"]["record_annotation"] == "preserve me too"
     assert observation["provenance"]["resolver"] == "1.1.1.1"
+    assert normalize_observation(observation) == observation
+
+
+def test_cname_rrset_owner_does_not_replace_queried_name_identity() -> None:
+    """CNAME-backed answers keep the QNAME as their longitudinal identity."""
+    present_row = {
+        "schema_version": 2,
+        "probe_type": "dns",
+        "domain": "paypal.com",
+        "subdomain": "www",
+        "full_domain": "www.paypal.com",
+        "query_name": "www.paypal.com",
+        "owner_name": "www.paypal.com.cdn.cloudflare.net.",
+        "rrset_owner_name": "www.paypal.com.cdn.cloudflare.net.",
+        "record_type": "HTTPS",
+        "query_status": "present",
+        "has_record": True,
+        "records": [
+            {
+                "priority": 1,
+                "target": ".",
+                "params": {"alpn": ["h2"]},
+                "usable": True,
+                "ignored": False,
+            }
+        ],
+        "validation_status": "valid",
+    }
+
+    observation = normalize_observation(present_row)
+
+    assert observation["name"] == "www.paypal.com"
+    assert observation["query_name"] == "www.paypal.com"
+    assert observation["owner_name"] == "www.paypal.com.cdn.cloudflare.net."
+    assert observation["rrset_owner_name"] == "www.paypal.com.cdn.cloudflare.net."
+    assert "query_name" not in observation.get("extensions", {})
+    assert "rrset_owner_name" not in observation.get("extensions", {})
+
+    old_canonical = dict(present_row)
+    old_canonical.pop("query_name")
+    old_canonical.pop("rrset_owner_name")
+    old_canonical.update(
+        {
+            "name": "www.paypal.com.cdn.cloudflare.net",
+            "extensions": {
+                "query_name": "www.paypal.com",
+                "rrset_owner_name": "www.paypal.com.cdn.cloudflare.net.",
+                "parser_limitations": ["retained"],
+            },
+        }
+    )
+    migrated = normalize_observation(old_canonical)
+    assert migrated["name"] == "www.paypal.com"
+    assert migrated["query_name"] == "www.paypal.com"
+    assert migrated["rrset_owner_name"] == "www.paypal.com.cdn.cloudflare.net."
+    assert migrated["extensions"] == {"parser_limitations": ["retained"]}
+
+    previous = build_snapshot(
+        [
+            {
+                "domain": "paypal.com",
+                "subdomain": "www",
+                "full_domain": "www.paypal.com",
+                "query_name": "www.paypal.com",
+                "record_type": "HTTPS",
+                "query_status": "absent",
+                "records": [],
+            }
+        ],
+        scan_started_at="2026-07-09T22:10:38Z",
+    )
+    current = build_snapshot([present_row], scan_started_at="2026-07-09T23:11:17Z")
+    changes = compare_snapshots(previous, current)
+
+    assert changes["summary"] == {"gained": 1, "lost": 0, "changed": 0}
+    assert changes["gained"][0]["name"] == "www.paypal.com"
+    assert current["metrics"]["denominators"]["https_names"] == 1
 
 
 def test_normalization_accepts_native_checker_v2_shape() -> None:

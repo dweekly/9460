@@ -5,8 +5,6 @@ retains legacy aggregate history without inventing unavailable detail, and
 emits the three JSON documents consumed by the public dashboard.
 """
 
-from __future__ import annotations
-
 import argparse
 import base64
 import binascii
@@ -18,7 +16,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime, timezone
 from importlib import resources
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import Any, cast
 
 import pandas as pd
 
@@ -46,7 +44,7 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
-def _iso_datetime(value: Any, default: Optional[str] = None) -> str:
+def _iso_datetime(value: Any, default: str | None = None) -> str:
     if value is None or (isinstance(value, float) and math.isnan(value)):
         return default or _utc_now()
     if isinstance(value, datetime):
@@ -110,7 +108,7 @@ def _write_json(path: Path, value: Any) -> Path:
     return path
 
 
-def _value_list(value: Any) -> List[str]:
+def _value_list(value: Any) -> list[str]:
     if value is None or (isinstance(value, float) and math.isnan(value)):
         return []
     if isinstance(value, str):
@@ -147,7 +145,7 @@ def _record_mode(record: Mapping[str, Any]) -> str:
         return "service"
 
 
-def _record_sort_key(record: Mapping[str, Any]) -> Tuple[int, str, str]:
+def _record_sort_key(record: Mapping[str, Any]) -> tuple[int, str, str]:
     try:
         priority = int(float(str(record.get("priority"))))
     except TypeError, ValueError:
@@ -155,7 +153,16 @@ def _record_sort_key(record: Mapping[str, Any]) -> Tuple[int, str, str]:
     return (priority, str(record.get("target") or ""), _canonical_text(record))
 
 
-def _normalize_record(record: Mapping[str, Any]) -> Dict[str, Any]:
+def _normalize_record(record: Mapping[str, Any]) -> dict[str, Any]:
+    extensions_value = record.get("extensions")
+    existing_extensions: dict[str, Any] = {}
+    if isinstance(extensions_value, Mapping):
+        nested_extensions = extensions_value.get("extensions")
+        if isinstance(nested_extensions, Mapping):
+            existing_extensions.update(dict(nested_extensions))
+        existing_extensions.update(
+            {key: value for key, value in extensions_value.items() if key != "extensions"}
+        )
     known = {
         "priority",
         "target",
@@ -170,8 +177,9 @@ def _normalize_record(record: Mapping[str, Any]) -> Dict[str, Any]:
         "validation_issues",
         "usable",
         "ignored",
+        "extensions",
     }
-    normalized: Dict[str, Any] = {
+    normalized: dict[str, Any] = {
         "priority": _json_safe(record.get("priority")),
         "target": str(record.get("target") or "."),
         "mode": _record_mode(record),
@@ -186,19 +194,20 @@ def _normalize_record(record: Mapping[str, Any]) -> Dict[str, Any]:
     }
     if isinstance(record.get("validation"), Mapping):
         normalized["validation"] = _json_safe(record["validation"])
-    extensions = {key: value for key, value in record.items() if key not in known}
+    extensions = dict(existing_extensions)
+    extensions.update({key: value for key, value in record.items() if key not in known})
     if extensions:
         normalized["extensions"] = _json_safe(extensions)
     return normalized
 
 
-def _legacy_record(row: Mapping[str, Any], rrtype: str, present: bool) -> List[Dict[str, Any]]:
+def _legacy_record(row: Mapping[str, Any], rrtype: str, present: bool) -> list[dict[str, Any]]:
     if not present:
         return []
     prefix = "https" if rrtype == "HTTPS" else "svcb"
     priority = row.get(f"{prefix}_priority")
     target = row.get(f"{prefix}_target")
-    params: Dict[str, Any] = {}
+    params: dict[str, Any] = {}
     if rrtype == "HTTPS":
         alpn = _value_list(row.get("alpn_protocols"))
         if alpn:
@@ -264,7 +273,7 @@ def _status(row: Mapping[str, Any], present: bool) -> str:
     return "error"
 
 
-def _normalize_validation(row: Mapping[str, Any], present: bool) -> Dict[str, Any]:
+def _normalize_validation(row: Mapping[str, Any], present: bool) -> dict[str, Any]:
     value = row.get("validation")
     if isinstance(value, Mapping):
         status = str(value.get("status") or ("unknown" if present else "not_applicable"))
@@ -306,7 +315,7 @@ def _valid_ech(value: Any) -> bool:
 
 def _eligible_feature_records(
     records: Sequence[Mapping[str, Any]],
-) -> List[Mapping[str, Any]]:
+) -> list[Mapping[str, Any]]:
     """Keep only effective, usable, non-ignored ServiceMode records."""
     return [
         record
@@ -323,16 +332,16 @@ def _normalize_features(
     probe_type: str,
     *,
     native_records: bool,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     existing = row.get("features")
     if probe_type != "dns":
         return _json_safe(existing) if isinstance(existing, Mapping) else {}
     feature_map = dict(existing) if isinstance(existing, Mapping) else {}
     eligible = _eligible_feature_records(records)
     alpn: set[str] = set()
-    ports: List[Any] = []
-    ipv4: List[str] = []
-    ipv6: List[str] = []
+    ports: list[Any] = []
+    ipv4: list[str] = []
+    ipv6: list[str] = []
     ech = False
     no_default_alpn = False
     if not native_records:
@@ -399,7 +408,7 @@ def _normalize_features(
     }
 
 
-def normalize_observation(row: Mapping[str, Any]) -> Dict[str, Any]:
+def normalize_observation(row: Mapping[str, Any]) -> dict[str, Any]:
     """Normalize one old or new scanner result into a schema-v2 observation."""
     probe_type = str(row.get("probe_type") or "dns").lower()
     rrtype_value = row.get("rrtype") or row.get("record_type")
@@ -409,8 +418,27 @@ def normalize_observation(row: Mapping[str, Any]) -> Dict[str, Any]:
         else (str(rrtype_value).upper() if rrtype_value else None)
     )
     domain = str(row.get("domain") or "").rstrip(".")
-    name = str(row.get("name") or row.get("owner_name") or row.get("full_domain") or domain).rstrip(
-        "."
+    extensions_value = row.get("extensions")
+    existing_extensions = dict(extensions_value) if isinstance(extensions_value, Mapping) else {}
+    query_name_value = row.get("query_name") or existing_extensions.get("query_name")
+    query_name = str(
+        query_name_value
+        or row.get("full_domain")
+        or row.get("name")
+        or row.get("owner_name")
+        or domain
+    ).rstrip(".")
+    name = str(
+        query_name_value
+        or row.get("name")
+        or row.get("full_domain")
+        or row.get("owner_name")
+        or domain
+    ).rstrip(".")
+    rrset_owner_name = (
+        row.get("rrset_owner_name")
+        if "rrset_owner_name" in row
+        else existing_extensions.get("rrset_owner_name")
     )
     variant = str(row.get("variant") or row.get("subdomain") or "").lower()
     if not variant:
@@ -455,7 +483,9 @@ def normalize_observation(row: Mapping[str, Any]) -> Dict[str, Any]:
         "probe_type",
         "domain",
         "name",
+        "query_name",
         "owner_name",
+        "rrset_owner_name",
         "full_domain",
         "variant",
         "subdomain",
@@ -508,14 +538,22 @@ def normalize_observation(row: Mapping[str, Any]) -> Dict[str, Any]:
         "script_version",
         "dns_servers",
         "schema_version",
+        "extensions",
     }
-    extensions = {key: value for key, value in row.items() if key not in known}
-    normalized: Dict[str, Any] = {
+    extensions = {
+        key: value
+        for key, value in existing_extensions.items()
+        if key not in {"query_name", "rrset_owner_name"}
+    }
+    extensions.update({key: value for key, value in row.items() if key not in known})
+    normalized: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "probe_type": probe_type,
         "domain": domain,
         "name": name,
-        "owner_name": _json_safe(row.get("owner_name") or name),
+        "query_name": query_name,
+        "owner_name": _json_safe(row.get("owner_name") or rrset_owner_name or name),
+        "rrset_owner_name": _json_safe(rrset_owner_name),
         "variant": variant,
         "rrtype": rrtype,
         "status": status,
@@ -554,7 +592,7 @@ def normalize_observation(row: Mapping[str, Any]) -> Dict[str, Any]:
     return normalized
 
 
-def _observation_key(observation: Mapping[str, Any]) -> Tuple[str, str, str, str, str]:
+def _observation_key(observation: Mapping[str, Any]) -> tuple[str, str, str, str, str]:
     return (
         str(observation.get("probe_type") or ""),
         str(observation.get("domain") or ""),
@@ -566,7 +604,7 @@ def _observation_key(observation: Mapping[str, Any]) -> Tuple[str, str, str, str
 
 def _observation_sort_key(
     observation: Mapping[str, Any],
-) -> Tuple[str, str, str, str, str, str, str]:
+) -> tuple[str, str, str, str, str, str, str]:
     """Sort deterministically without making resolver part of record identity."""
     return (
         *_observation_key(observation),
@@ -575,7 +613,7 @@ def _observation_sort_key(
     )
 
 
-def load_cohort(path: Optional[Path] = None) -> Dict[str, Any]:
+def load_cohort(path: Path | None = None) -> dict[str, Any]:
     """Load and fingerprint the tracked target cohort."""
     if path is None:
         source_name = "bundled top_websites.json"
@@ -599,7 +637,7 @@ def load_cohort(path: Optional[Path] = None) -> Dict[str, Any]:
     }
 
 
-def _cohort_from_rows(rows: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
+def _cohort_from_rows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     domains = sorted({str(row.get("domain")).rstrip(".") for row in rows if row.get("domain")})
     digest = hashlib.sha256("\n".join(domains).encode("utf-8")).hexdigest()[:16]
     return {
@@ -612,9 +650,9 @@ def _cohort_from_rows(rows: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
 
 
 def _extract_resolvers(
-    rows: Sequence[Mapping[str, Any]], supplied: Optional[Sequence[str]]
-) -> List[str]:
-    values: List[str] = _value_list(supplied)
+    rows: Sequence[Mapping[str, Any]], supplied: Sequence[str] | None
+) -> list[str]:
+    values: list[str] = _value_list(supplied)
     for row in rows:
         actual = row.get("resolver") or row.get("actual_resolver")
         if actual:
@@ -623,9 +661,9 @@ def _extract_resolvers(
 
 
 def _extract_configured_resolvers(
-    rows: Sequence[Mapping[str, Any]], supplied: Optional[Sequence[str]]
-) -> List[str]:
-    values: List[str] = _value_list(supplied)
+    rows: Sequence[Mapping[str, Any]], supplied: Sequence[str] | None
+) -> list[str]:
+    values: list[str] = _value_list(supplied)
     for row in rows:
         values.extend(_value_list(row.get("dns_servers")))
         values.extend(_value_list(row.get("configured_resolvers")))
@@ -633,7 +671,7 @@ def _extract_configured_resolvers(
 
 
 def _merge_scan_provenance(
-    target: Dict[str, Any], container: Any, *, include_all: bool = False
+    target: dict[str, Any], container: Any, *, include_all: bool = False
 ) -> None:
     if not isinstance(container, Mapping):
         return
@@ -666,16 +704,16 @@ def _merge_scan_provenance(
 def build_snapshot(
     data: Any,
     *,
-    scan_started_at: Optional[Any] = None,
-    scan_completed_at: Optional[Any] = None,
-    resolvers: Optional[Sequence[str]] = None,
-    cohort: Optional[Mapping[str, Any]] = None,
-    scan_metadata: Optional[Mapping[str, Any]] = None,
-) -> Dict[str, Any]:
+    scan_started_at: Any | None = None,
+    scan_completed_at: Any | None = None,
+    resolvers: Sequence[str] | None = None,
+    cohort: Mapping[str, Any] | None = None,
+    scan_metadata: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """Build a canonical schema-v2 snapshot from old or new observations."""
-    source_scan_metadata: Dict[str, Any] = {}
-    source_scan_provenance: Dict[str, Any] = {}
-    source_configured_resolvers: Optional[Sequence[str]] = None
+    source_scan_metadata: dict[str, Any] = {}
+    source_scan_provenance: dict[str, Any] = {}
+    source_configured_resolvers: Sequence[str] | None = None
     if isinstance(data, pd.DataFrame):
         rows = [dict(row) for row in data.to_dict(orient="records")]
     elif isinstance(data, Mapping):
@@ -786,7 +824,7 @@ def build_snapshot(
         "feature_leaders": identify_feature_leaders(observations),
         "error_statistics": calculate_error_statistics(observations),
     }
-    return cast(Dict[str, Any], _json_safe(snapshot))
+    return cast(dict[str, Any], _json_safe(snapshot))
 
 
 def _snapshot_filename(snapshot: Mapping[str, Any]) -> str:
@@ -813,7 +851,7 @@ def write_snapshot(snapshot: Mapping[str, Any], scan_dir: Path) -> Path:
     return path
 
 
-def load_snapshot(path: Path) -> Dict[str, Any]:
+def load_snapshot(path: Path) -> dict[str, Any]:
     """Load a compressed or plain JSON snapshot."""
     if path.suffix == ".gz":
         with gzip.open(path, "rt", encoding="utf-8") as source:
@@ -826,7 +864,7 @@ def load_snapshot(path: Path) -> Dict[str, Any]:
     return value
 
 
-def _legacy_metrics(value: Mapping[str, Any]) -> Dict[str, Any]:
+def _legacy_metrics(value: Mapping[str, Any]) -> dict[str, Any]:
     metrics_value = value.get("metrics")
     old: Mapping[str, Any] = metrics_value if isinstance(metrics_value, Mapping) else {}
     adoption_value = old.get("adoption")
@@ -850,7 +888,7 @@ def _legacy_metrics(value: Mapping[str, Any]) -> Dict[str, Any]:
         else round(float(adoption.get("svcb_adoption") or 0) * svcb_names / 100)
     )
 
-    def metric(count: int, denominator: int, percentage: Optional[Any] = None) -> Dict[str, Any]:
+    def metric(count: int, denominator: int, percentage: Any | None = None) -> dict[str, Any]:
         calculated = round(count / denominator * 100, 2) if denominator else 0.0
         return {
             "count": count,
@@ -860,7 +898,7 @@ def _legacy_metrics(value: Mapping[str, Any]) -> Dict[str, Any]:
 
     root_count = round(float(adoption.get("root_adoption") or 0) * domains / 100)
     www_count = round(float(adoption.get("www_adoption") or 0) * domains / 100)
-    normalized_features: Dict[str, Any] = {}
+    normalized_features: dict[str, Any] = {}
     for name, legacy_name in (
         ("h3_advertised", "http3_support"),
         ("ech_advertised", "ech_deployment"),
@@ -933,9 +971,9 @@ def _legacy_metrics(value: Mapping[str, Any]) -> Dict[str, Any]:
     }
 
 
-def import_legacy_history(legacy_dir: Path) -> List[Dict[str, Any]]:
+def import_legacy_history(legacy_dir: Path) -> list[dict[str, Any]]:
     """Import only aggregate facts available in schema-v1 analysis files."""
-    entries: List[Dict[str, Any]] = []
+    entries: list[dict[str, Any]] = []
     for path in sorted(legacy_dir.glob("rfc9460_analysis_*.json")):
         try:
             value = load_snapshot(path)
@@ -966,12 +1004,12 @@ def import_legacy_history(legacy_dir: Path) -> List[Dict[str, Any]]:
     return entries
 
 
-def _snapshot_paths(scan_dir: Path) -> List[Path]:
+def _snapshot_paths(scan_dir: Path) -> list[Path]:
     return sorted(scan_dir.glob("rfc9460_scan_*.json.gz"))
 
 
-def _detailed_snapshots(scan_dir: Path) -> List[Dict[str, Any]]:
-    snapshots: List[Dict[str, Any]] = []
+def _detailed_snapshots(scan_dir: Path) -> list[dict[str, Any]]:
+    snapshots: list[dict[str, Any]] = []
     for path in _snapshot_paths(scan_dir):
         try:
             snapshot = load_snapshot(path)
@@ -985,7 +1023,7 @@ def _detailed_snapshots(scan_dir: Path) -> List[Dict[str, Any]]:
     return snapshots
 
 
-def _history_entry(snapshot: Mapping[str, Any]) -> Dict[str, Any]:
+def _history_entry(snapshot: Mapping[str, Any]) -> dict[str, Any]:
     scan = cast(Mapping[str, Any], snapshot["scan"])
     cohort_value = snapshot.get("cohort")
     cohort: Mapping[str, Any] = cohort_value if isinstance(cohort_value, Mapping) else {}
@@ -1005,8 +1043,8 @@ def _history_entry(snapshot: Mapping[str, Any]) -> Dict[str, Any]:
 
 
 def build_history(
-    snapshots: Sequence[Mapping[str, Any]], legacy_dir: Optional[Path] = None
-) -> List[Dict[str, Any]]:
+    snapshots: Sequence[Mapping[str, Any]], legacy_dir: Path | None = None
+) -> list[dict[str, Any]]:
     """Combine legacy aggregates and schema-v2 history in chronological order."""
     entries = import_legacy_history(legacy_dir) if legacy_dir else []
     entries.extend(_history_entry(snapshot) for snapshot in snapshots)
@@ -1014,7 +1052,7 @@ def build_history(
     return sorted(deduplicated.values(), key=lambda entry: (entry["scan_date"], entry["scan_id"]))
 
 
-def _identity(observation: Mapping[str, Any]) -> Dict[str, Any]:
+def _identity(observation: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "probe_type": observation.get("probe_type"),
         "domain": observation.get("domain"),
@@ -1024,7 +1062,7 @@ def _identity(observation: Mapping[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _material_alias_chain(value: Any) -> List[Dict[str, Any]]:
+def _material_alias_chain(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         return []
     return [
@@ -1034,7 +1072,7 @@ def _material_alias_chain(value: Any) -> List[Dict[str, Any]]:
     ]
 
 
-def _material_resolved_rrsets(value: Any) -> List[Dict[str, Any]]:
+def _material_resolved_rrsets(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         return []
     fields = (
@@ -1051,7 +1089,7 @@ def _material_resolved_rrsets(value: Any) -> List[Dict[str, Any]]:
     ]
 
 
-def _state(observation: Mapping[str, Any]) -> Dict[str, Any]:
+def _state(observation: Mapping[str, Any]) -> dict[str, Any]:
     effective_records = (
         observation.get("effective_records")
         if "effective_records" in observation
@@ -1072,8 +1110,8 @@ def _state(observation: Mapping[str, Any]) -> Dict[str, Any]:
 
 
 def compare_snapshots(
-    previous: Optional[Mapping[str, Any]], current: Mapping[str, Any]
-) -> Dict[str, Any]:
+    previous: Mapping[str, Any] | None, current: Mapping[str, Any]
+) -> dict[str, Any]:
     """Describe gained, lost, and materially changed observations."""
     current_scan_value = current.get("scan")
     current_scan: Mapping[str, Any] = (
@@ -1084,7 +1122,7 @@ def compare_snapshots(
         previous_scan_value if isinstance(previous_scan_value, Mapping) else {}
     )
     generated_at = current_scan.get("completed_at") or _utc_now()
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "generated_at": generated_at,
         "comparable": previous is not None,
@@ -1139,8 +1177,8 @@ def generate_pages_data(
     *,
     scan_dir: Path,
     pages_dir: Path,
-    legacy_dir: Optional[Path] = None,
-) -> Dict[str, Path]:
+    legacy_dir: Path | None = None,
+) -> dict[str, Path]:
     """Generate deterministic latest, history, and changes dashboard data."""
     snapshots = _detailed_snapshots(scan_dir)
     current_id = snapshot["scan"]["id"]
@@ -1176,10 +1214,10 @@ def run_pipeline(
     *,
     scan_dir: Path,
     pages_dir: Path,
-    legacy_dir: Optional[Path] = None,
-    cohort_path: Optional[Path] = None,
-    scan_started_at: Optional[str] = None,
-) -> Dict[str, Path]:
+    legacy_dir: Path | None = None,
+    cohort_path: Path | None = None,
+    scan_started_at: str | None = None,
+) -> dict[str, Path]:
     """Build and persist a canonical snapshot and all Pages data."""
     data = _load_input(input_path)
     cohort = load_cohort(cohort_path)
@@ -1195,8 +1233,8 @@ def verify_pages_data(
     latest_path: Path,
     *,
     scan_dir: Path,
-    max_age_hours: Optional[float] = None,
-) -> Dict[str, Any]:
+    max_age_hours: float | None = None,
+) -> dict[str, Any]:
     """Verify that all generated data describes the newest canonical scan."""
     pages_dir = latest_path.parent
     history_path = pages_dir / "history.json"
@@ -1260,7 +1298,7 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     """Run the build or verification command."""
     args = _parser().parse_args(argv)
     if args.command == "build":
