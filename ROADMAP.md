@@ -72,7 +72,7 @@ Publishing an HTTPS or SVCB record is optional, so record absence is not RFC non
 ## Completed changes
 
 - 2026-07-09: Established scheduled schema-v2 scan `2026-07-09T23:11:17Z` as the first detailed longitudinal baseline and confirmed the deployed `latest.json` was byte-for-byte identical to the canonical snapshot committed by the workflow.
-- 2026-07-09: Promoted queried names and post-CNAME RRset owners to separate first-class fields so longitudinal identity, changes, and dashboard labels remain anchored to the stable QNAME.
+- 2026-07-09: Promoted queried names and post-CNAME RRset owners to separate first-class fields so longitudinal identity, changes, and dashboard labels remain anchored to the name that was queried.
 - 2026-07-09: Added the schema-v2 canonical scan with complete parsed RRsets, query/owner identity, resolver and software provenance, post-parser validity findings, explicit denominators, and extensible probe types.
 - 2026-07-09: Added AliasMode/ServiceMode handling, bounded alias traversal, loop outcomes, mandatory and automatic-mandatory checks, current IANA SvcParam metadata, and explicit raw-wire validation limitations.
 - 2026-07-09: Replaced the synthetic compliance score with separate adoption, validity, compatibility, and feature-advertisement metrics; legacy names remain documented compatibility aliases only.
