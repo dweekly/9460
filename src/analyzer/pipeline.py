@@ -1,0 +1,1285 @@
+"""Canonical snapshot and GitHub Pages data pipeline.
+
+The pipeline upgrades flat scanner rows to a deterministic schema-v2 snapshot,
+retains legacy aggregate history without inventing unavailable detail, and
+emits the three JSON documents consumed by the public dashboard.
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import binascii
+import gzip
+import hashlib
+import json
+import math
+from collections.abc import Iterable, Mapping, Sequence
+from datetime import datetime, timezone
+from importlib import resources
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, cast
+
+import pandas as pd
+
+from .metrics import (
+    analyze_alpn_protocols,
+    calculate_error_statistics,
+    calculate_metrics,
+    calculate_priority_distribution,
+    identify_feature_leaders,
+)
+
+SCHEMA_VERSION = 2
+ABSENCE_ERRORS = {"noanswer", "no answer", "no https record", "no svcb record"}
+PROVENANCE_KEYS = (
+    "package_version",
+    "script_version",
+    "python_version",
+    "dnspython_version",
+    "validator_ruleset",
+    "registry_snapshot",
+)
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _iso_datetime(value: Any, default: Optional[str] = None) -> str:
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return default or _utc_now()
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        text = str(value).strip()
+        if not text:
+            return default or _utc_now()
+        if text.endswith("Z"):
+            text = f"{text[:-1]}+00:00"
+        try:
+            parsed = datetime.fromisoformat(text)
+        except ValueError:
+            # Accept timestamps embedded in the project's historical filenames.
+            try:
+                parsed = datetime.strptime(text, "%Y-%m-%d_%H-%M-%S")
+            except ValueError as error:
+                raise ValueError(f"invalid scan timestamp: {value!r}") from error
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _json_safe(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, float) and math.isnan(value):
+        return None
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, bytes):
+        return f"base64:{base64.b64encode(value).decode('ascii')}"
+    if isinstance(value, datetime):
+        return _iso_datetime(value)
+    if isinstance(value, Mapping):
+        return {
+            str(key): _json_safe(item)
+            for key, item in sorted(value.items(), key=lambda x: str(x[0]))
+        }
+    if isinstance(value, set):
+        return sorted((_json_safe(item) for item in value), key=_canonical_text)
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return [_json_safe(item) for item in value]
+    if hasattr(value, "item"):
+        return _json_safe(value.item())
+    if hasattr(value, "tolist"):
+        return _json_safe(value.tolist())
+    return str(value)
+
+
+def _canonical_text(value: Any) -> str:
+    return json.dumps(_json_safe(value), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _write_json(path: Path, value: Any) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(_json_safe(value), indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _value_list(value: Any) -> List[str]:
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return []
+    if isinstance(value, str):
+        return [part.strip() for part in value.split(",") if part.strip()]
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return [str(part).strip() for part in value if str(part).strip()]
+    return [str(value).strip()]
+
+
+def _boolean(value: Any) -> bool:
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return False
+    if isinstance(value, str):
+        return value.strip().lower() not in {"", "0", "false", "no", "none", "null"}
+    return bool(value)
+
+
+def _integer(value: Any, default: int = 0) -> int:
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return default
+    try:
+        return int(value)
+    except TypeError, ValueError:
+        return default
+
+
+def _record_mode(record: Mapping[str, Any]) -> str:
+    mode = str(record.get("mode") or "").lower()
+    if mode:
+        return mode
+    try:
+        return "alias" if int(float(str(record.get("priority")))) == 0 else "service"
+    except TypeError, ValueError:
+        return "service"
+
+
+def _record_sort_key(record: Mapping[str, Any]) -> Tuple[int, str, str]:
+    try:
+        priority = int(float(str(record.get("priority"))))
+    except TypeError, ValueError:
+        priority = 65536
+    return (priority, str(record.get("target") or ""), _canonical_text(record))
+
+
+def _normalize_record(record: Mapping[str, Any]) -> Dict[str, Any]:
+    known = {
+        "priority",
+        "target",
+        "mode",
+        "params",
+        "service_params",
+        "param_details",
+        "raw",
+        "ttl",
+        "validation",
+        "validity",
+        "validation_issues",
+        "usable",
+        "ignored",
+    }
+    normalized: Dict[str, Any] = {
+        "priority": _json_safe(record.get("priority")),
+        "target": str(record.get("target") or "."),
+        "mode": _record_mode(record),
+        "params": _json_safe(record.get("params") or record.get("service_params") or {}),
+        "param_details": _json_safe(record.get("param_details") or []),
+        "raw": _json_safe(record.get("raw")),
+        "ttl": _json_safe(record.get("ttl")),
+        "validity": _json_safe(record.get("validity")),
+        "validation_issues": _json_safe(record.get("validation_issues") or []),
+        "usable": _json_safe(record.get("usable")),
+        "ignored": _json_safe(record.get("ignored")),
+    }
+    if isinstance(record.get("validation"), Mapping):
+        normalized["validation"] = _json_safe(record["validation"])
+    extensions = {key: value for key, value in record.items() if key not in known}
+    if extensions:
+        normalized["extensions"] = _json_safe(extensions)
+    return normalized
+
+
+def _legacy_record(row: Mapping[str, Any], rrtype: str, present: bool) -> List[Dict[str, Any]]:
+    if not present:
+        return []
+    prefix = "https" if rrtype == "HTTPS" else "svcb"
+    priority = row.get(f"{prefix}_priority")
+    target = row.get(f"{prefix}_target")
+    params: Dict[str, Any] = {}
+    if rrtype == "HTTPS":
+        alpn = _value_list(row.get("alpn_protocols"))
+        if alpn:
+            params["alpn"] = alpn
+        if row.get("port") is not None and not (
+            isinstance(row.get("port"), float) and math.isnan(row["port"])
+        ):
+            params["port"] = _json_safe(row.get("port"))
+        ipv4 = _value_list(row.get("ipv4hint"))
+        ipv6 = _value_list(row.get("ipv6hint"))
+        if ipv4:
+            params["ipv4hint"] = ipv4
+        if ipv6:
+            params["ipv6hint"] = ipv6
+        if _boolean(row.get("ech_config")):
+            params["ech"] = True
+    elif isinstance(row.get("svcb_params"), Mapping):
+        params = dict(row["svcb_params"])
+    return [
+        _normalize_record(
+            {
+                "priority": priority,
+                "target": target or ".",
+                "mode": "alias" if priority == 0 else "service",
+                "params": params,
+                "raw": row.get("raw") or row.get("raw_record"),
+                "ttl": row.get("ttl"),
+                # Legacy flat rows predate record-level validation. Treat their
+                # selected ServiceMode projection as usable for compatibility.
+                "usable": True,
+                "ignored": False,
+            }
+        )
+    ]
+
+
+def _presence(row: Mapping[str, Any], rrtype: str) -> bool:
+    if "present" in row:
+        return _boolean(row.get("present"))
+    status = str(row.get("status") or row.get("query_status") or "").lower()
+    if status:
+        return status in {"present", "valid", "invalid", "valid_but_incompatible"}
+    if "has_record" in row:
+        return _boolean(row.get("has_record"))
+    return _boolean(row.get("has_svcb_record" if rrtype == "SVCB" else "has_https_record"))
+
+
+def _status(row: Mapping[str, Any], present: bool) -> str:
+    explicit = row.get("status") or row.get("query_status")
+    if explicit:
+        status = str(explicit).lower()
+        return "absent" if status in {"no_answer", "noanswer"} else status
+    if present:
+        return "present"
+    error = str(row.get("error") or row.get("query_error") or "").strip()
+    lowered = error.lower()
+    if lowered == "nxdomain":
+        return "nxdomain"
+    if lowered == "timeout":
+        return "timeout"
+    if lowered in ABSENCE_ERRORS or not lowered:
+        return "absent"
+    return "error"
+
+
+def _normalize_validation(row: Mapping[str, Any], present: bool) -> Dict[str, Any]:
+    value = row.get("validation")
+    if isinstance(value, Mapping):
+        status = str(value.get("status") or ("unknown" if present else "not_applicable"))
+        issues_value = value.get("issues") or []
+    else:
+        status = str(row.get("validation_status") or ("unknown" if present else "not_applicable"))
+        issues_value = row.get("validation_issues") or row.get("issues") or []
+    if isinstance(issues_value, str):
+        issues = [issues_value]
+    elif isinstance(issues_value, Iterable):
+        issues = [_json_safe(issue) for issue in issues_value]
+    else:
+        issues = [_json_safe(issues_value)]
+    unique_issues = {_canonical_text(issue): issue for issue in issues}
+    return {
+        "status": status.lower(),
+        "issues": [unique_issues[key] for key in sorted(unique_issues)],
+    }
+
+
+def _valid_ech(value: Any) -> bool:
+    """Return whether a decoded ECH parameter contains valid, non-empty bytes."""
+    if isinstance(value, bytes):
+        return bool(value)
+    if isinstance(value, Mapping):
+        if value.get("encoding") != "base64" or not isinstance(value.get("value"), str):
+            return False
+        try:
+            return bool(base64.b64decode(value["value"], validate=True))
+        except binascii.Error, ValueError:
+            return False
+    if isinstance(value, str) and value.startswith("base64:"):
+        try:
+            return bool(base64.b64decode(value.removeprefix("base64:"), validate=True))
+        except binascii.Error, ValueError:
+            return False
+    return False
+
+
+def _eligible_feature_records(
+    records: Sequence[Mapping[str, Any]],
+) -> List[Mapping[str, Any]]:
+    """Keep only effective, usable, non-ignored ServiceMode records."""
+    return [
+        record
+        for record in records
+        if _record_mode(record) == "service"
+        and record.get("usable") is True
+        and not _boolean(record.get("ignored"))
+    ]
+
+
+def _normalize_features(
+    row: Mapping[str, Any],
+    records: Sequence[Mapping[str, Any]],
+    probe_type: str,
+    *,
+    native_records: bool,
+) -> Dict[str, Any]:
+    existing = row.get("features")
+    if probe_type != "dns":
+        return _json_safe(existing) if isinstance(existing, Mapping) else {}
+    feature_map = dict(existing) if isinstance(existing, Mapping) else {}
+    eligible = _eligible_feature_records(records)
+    alpn: set[str] = set()
+    ports: List[Any] = []
+    ipv4: List[str] = []
+    ipv6: List[str] = []
+    ech = False
+    no_default_alpn = False
+    if not native_records:
+        alpn.update(_value_list(row.get("alpn_protocols") or feature_map.get("alpn")))
+        ech = _boolean(
+            row.get("ech_config")
+            or feature_map.get("ech_advertised")
+            or feature_map.get("ech_deployment")
+        )
+        no_default_alpn = _boolean(row.get("no_default_alpn") or feature_map.get("no_default_alpn"))
+        ipv4.extend(_value_list(row.get("ipv4hint")))
+        ipv6.extend(_value_list(row.get("ipv6hint")))
+    for record in eligible:
+        params = record.get("params")
+        if not isinstance(params, Mapping):
+            continue
+        alpn.update(_value_list(params.get("alpn")))
+        if params.get("port") is not None:
+            ports.append(params["port"])
+        ipv4.extend(_value_list(params.get("ipv4hint") or params.get("ipv4_hints")))
+        ipv6.extend(_value_list(params.get("ipv6hint") or params.get("ipv6_hints")))
+        ech = ech or _valid_ech(params.get("ech"))
+        no_default_alpn = (
+            no_default_alpn
+            or "no-default-alpn" in params
+            or _boolean(params.get("no_default_alpn"))
+        )
+    h3 = "h3" in alpn
+    if not native_records:
+        h3 = h3 or _boolean(
+            row.get("has_http3")
+            or feature_map.get("h3_advertised")
+            or feature_map.get("http3_support")
+        )
+    row_port = row.get("port")
+    custom_row_port = False
+    if (
+        not native_records
+        and row_port is not None
+        and not (isinstance(row_port, float) and math.isnan(row_port))
+    ):
+        try:
+            custom_row_port = int(row_port) != 443
+        except TypeError, ValueError:
+            custom_row_port = True
+    custom_ports = []
+    for port in ports:
+        try:
+            if int(port) != 443:
+                custom_ports.append(port)
+        except TypeError, ValueError:
+            custom_ports.append(port)
+    return {
+        "alpn": sorted(alpn),
+        "h3_advertised": h3,
+        "ech_advertised": ech,
+        "ports": _json_safe(ports),
+        "custom_port": bool(custom_ports)
+        or custom_row_port
+        or (not native_records and _boolean(feature_map.get("custom_port"))),
+        "ipv4_hints": sorted(set(ipv4)),
+        "ipv6_hints": sorted(set(ipv6)),
+        "no_default_alpn": no_default_alpn,
+    }
+
+
+def normalize_observation(row: Mapping[str, Any]) -> Dict[str, Any]:
+    """Normalize one old or new scanner result into a schema-v2 observation."""
+    probe_type = str(row.get("probe_type") or "dns").lower()
+    rrtype_value = row.get("rrtype") or row.get("record_type")
+    rrtype = (
+        str(rrtype_value or "HTTPS").upper()
+        if probe_type == "dns"
+        else (str(rrtype_value).upper() if rrtype_value else None)
+    )
+    domain = str(row.get("domain") or "").rstrip(".")
+    name = str(row.get("name") or row.get("owner_name") or row.get("full_domain") or domain).rstrip(
+        "."
+    )
+    variant = str(row.get("variant") or row.get("subdomain") or "").lower()
+    if not variant:
+        variant = "www" if domain and name == f"www.{domain}" else "root"
+    present = _presence(row, rrtype or "")
+    records_value = row.get("records")
+    native_records = isinstance(records_value, Sequence) and not isinstance(
+        records_value, (str, bytes)
+    )
+    if isinstance(records_value, Sequence) and not isinstance(records_value, (str, bytes)):
+        records = [
+            _normalize_record(record) for record in records_value if isinstance(record, Mapping)
+        ]
+    else:
+        records = _legacy_record(row, rrtype or "", present) if probe_type == "dns" else []
+    records.sort(key=_record_sort_key)
+    effective_value = row.get("effective_records")
+    if isinstance(effective_value, Sequence) and not isinstance(effective_value, (str, bytes)):
+        native_records = True
+        effective_records = [
+            _normalize_record(record) for record in effective_value if isinstance(record, Mapping)
+        ]
+        effective_records.sort(key=_record_sort_key)
+    else:
+        effective_records = None
+
+    status = _status(row, present)
+    raw_error = row.get("error") or row.get("query_error")
+    error = None if status in {"absent", "nxdomain"} else raw_error
+    resolver = row.get("resolver") or row.get("actual_resolver")
+    configured_resolvers = sorted(set(_value_list(row.get("configured_resolvers"))))
+    provenance_value = row.get("provenance")
+    provenance = dict(provenance_value) if isinstance(provenance_value, Mapping) else {}
+    if resolver and "resolver" not in provenance:
+        provenance["resolver"] = resolver
+    if row.get("resolver_port") is not None:
+        provenance.setdefault("resolver_port", row.get("resolver_port"))
+    if row.get("canonical_name") is not None:
+        provenance.setdefault("canonical_name", row.get("canonical_name"))
+
+    known = {
+        "probe_type",
+        "domain",
+        "name",
+        "owner_name",
+        "full_domain",
+        "variant",
+        "subdomain",
+        "rrtype",
+        "record_type",
+        "status",
+        "query_status",
+        "present",
+        "records",
+        "record_count",
+        "effective_records",
+        "effective_validation_status",
+        "rrset_validation",
+        "alias_chain",
+        "alias_resolution_status",
+        "alias_resolution_error",
+        "resolved_rrsets",
+        "validation",
+        "validation_status",
+        "validation_issues",
+        "issues",
+        "features",
+        "resolver",
+        "actual_resolver",
+        "resolver_port",
+        "configured_resolvers",
+        "canonical_name",
+        "provenance",
+        "error",
+        "query_error",
+        "has_https_record",
+        "has_svcb_record",
+        "has_record",
+        "https_priority",
+        "https_target",
+        "svcb_priority",
+        "svcb_target",
+        "svcb_params",
+        "alpn_protocols",
+        "has_http3",
+        "ech_config",
+        "port",
+        "ipv4hint",
+        "ipv6hint",
+        "no_default_alpn",
+        "raw",
+        "raw_record",
+        "ttl",
+        "timestamp",
+        "script_version",
+        "dns_servers",
+        "schema_version",
+    }
+    extensions = {key: value for key, value in row.items() if key not in known}
+    normalized: Dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "probe_type": probe_type,
+        "domain": domain,
+        "name": name,
+        "owner_name": _json_safe(row.get("owner_name") or name),
+        "variant": variant,
+        "rrtype": rrtype,
+        "status": status,
+        "present": present,
+        "records": records,
+        "record_count": _integer(row.get("record_count"), len(records)),
+        "validation": _normalize_validation(row, present),
+        "features": _normalize_features(
+            row,
+            effective_records if effective_records is not None else records,
+            probe_type,
+            native_records=native_records,
+        ),
+        "resolver": _json_safe(resolver),
+        "resolver_port": _json_safe(row.get("resolver_port")),
+        "configured_resolvers": configured_resolvers,
+        "canonical_name": _json_safe(row.get("canonical_name")),
+        "ttl": _json_safe(row.get("ttl")),
+        "provenance": _json_safe(provenance),
+        "error": _json_safe(error),
+    }
+    if effective_records is not None:
+        normalized["effective_records"] = effective_records
+    for field in (
+        "effective_validation_status",
+        "rrset_validation",
+        "alias_chain",
+        "alias_resolution_status",
+        "alias_resolution_error",
+        "resolved_rrsets",
+    ):
+        if field in row:
+            normalized[field] = _json_safe(row.get(field))
+    if extensions:
+        normalized["extensions"] = _json_safe(extensions)
+    return normalized
+
+
+def _observation_key(observation: Mapping[str, Any]) -> Tuple[str, str, str, str, str]:
+    return (
+        str(observation.get("probe_type") or ""),
+        str(observation.get("domain") or ""),
+        str(observation.get("name") or ""),
+        str(observation.get("variant") or ""),
+        str(observation.get("rrtype") or ""),
+    )
+
+
+def _observation_sort_key(
+    observation: Mapping[str, Any],
+) -> Tuple[str, str, str, str, str, str, str]:
+    """Sort deterministically without making resolver part of record identity."""
+    return (
+        *_observation_key(observation),
+        str(observation.get("resolver") or ""),
+        _canonical_text(observation),
+    )
+
+
+def load_cohort(path: Optional[Path] = None) -> Dict[str, Any]:
+    """Load and fingerprint the tracked target cohort."""
+    if path is None:
+        source_name = "bundled top_websites.json"
+        source_text = (
+            resources.files("src.data").joinpath("top_websites.json").read_text(encoding="utf-8")
+        )
+    else:
+        source_name = str(path)
+        source_text = path.read_text(encoding="utf-8")
+    value = json.loads(source_text)
+    if not isinstance(value, Mapping):
+        raise ValueError(f"cohort file must contain a JSON object: {source_name}")
+    domains = [str(domain).rstrip(".") for domain in value.get("websites", [])]
+    digest = hashlib.sha256("\n".join(domains).encode("utf-8")).hexdigest()[:16]
+    return {
+        "id": str(value.get("id") or f"sha256:{digest}"),
+        "source": value.get("source"),
+        "updated_at": value.get("updated_at") or value.get("last_updated"),
+        "count": len(domains),
+        "domains": domains,
+    }
+
+
+def _cohort_from_rows(rows: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
+    domains = sorted({str(row.get("domain")).rstrip(".") for row in rows if row.get("domain")})
+    digest = hashlib.sha256("\n".join(domains).encode("utf-8")).hexdigest()[:16]
+    return {
+        "id": f"sha256:{digest}",
+        "source": "scan input",
+        "updated_at": None,
+        "count": len(domains),
+        "domains": domains,
+    }
+
+
+def _extract_resolvers(
+    rows: Sequence[Mapping[str, Any]], supplied: Optional[Sequence[str]]
+) -> List[str]:
+    values: List[str] = _value_list(supplied)
+    for row in rows:
+        actual = row.get("resolver") or row.get("actual_resolver")
+        if actual:
+            values.append(str(actual))
+    return sorted(set(values))
+
+
+def _extract_configured_resolvers(
+    rows: Sequence[Mapping[str, Any]], supplied: Optional[Sequence[str]]
+) -> List[str]:
+    values: List[str] = _value_list(supplied)
+    for row in rows:
+        values.extend(_value_list(row.get("dns_servers")))
+        values.extend(_value_list(row.get("configured_resolvers")))
+    return sorted(set(values))
+
+
+def _merge_scan_provenance(
+    target: Dict[str, Any], container: Any, *, include_all: bool = False
+) -> None:
+    if not isinstance(container, Mapping):
+        return
+    software = container.get("software")
+    if isinstance(software, Mapping):
+        version = software.get("version")
+        if version is not None:
+            target.setdefault("package_version", version)
+            target.setdefault("script_version", version)
+        if software.get("python") is not None:
+            target.setdefault("python_version", software["python"])
+        if software.get("dnspython") is not None:
+            target.setdefault("dnspython_version", software["dnspython"])
+        if software.get("commit") is not None:
+            target.setdefault("source_commit", software["commit"])
+        target.setdefault("software", dict(software))
+    if container.get("validator_ruleset_version") is not None:
+        target.setdefault("validator_ruleset", container["validator_ruleset_version"])
+    if container.get("svcparam_registry") is not None:
+        target.setdefault("registry_snapshot", container["svcparam_registry"])
+    nested = container.get("provenance")
+    if isinstance(nested, Mapping):
+        target.update(dict(nested))
+    if include_all:
+        target.update({key: value for key, value in container.items() if key != "provenance"})
+    else:
+        target.update({key: container[key] for key in PROVENANCE_KEYS if key in container})
+
+
+def build_snapshot(
+    data: Any,
+    *,
+    scan_started_at: Optional[Any] = None,
+    scan_completed_at: Optional[Any] = None,
+    resolvers: Optional[Sequence[str]] = None,
+    cohort: Optional[Mapping[str, Any]] = None,
+    scan_metadata: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Build a canonical schema-v2 snapshot from old or new observations."""
+    source_scan_metadata: Dict[str, Any] = {}
+    source_scan_provenance: Dict[str, Any] = {}
+    source_configured_resolvers: Optional[Sequence[str]] = None
+    if isinstance(data, pd.DataFrame):
+        rows = [dict(row) for row in data.to_dict(orient="records")]
+    elif isinstance(data, Mapping):
+        value = data.get("observations")
+        if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+            raise ValueError("snapshot input object must contain an observations array")
+        rows = [dict(row) for row in value if isinstance(row, Mapping)]
+        source_scan = data.get("scan")
+        if isinstance(source_scan, Mapping):
+            _merge_scan_provenance(source_scan_provenance, source_scan)
+            _merge_scan_provenance(
+                source_scan_provenance, source_scan.get("provenance"), include_all=True
+            )
+            _merge_scan_provenance(source_scan_provenance, source_scan.get("metadata"))
+            _merge_scan_provenance(source_scan_provenance, source_scan.get("extensions"))
+            scan_started_at = (
+                scan_started_at or source_scan.get("started_at") or source_scan.get("timestamp")
+            )
+            scan_completed_at = scan_completed_at or source_scan.get("completed_at")
+            resolvers = (
+                resolvers or source_scan.get("observed_resolvers") or source_scan.get("resolvers")
+            )
+            configured_value = source_scan.get("configured_resolvers")
+            if isinstance(configured_value, Sequence) and not isinstance(
+                configured_value, (str, bytes)
+            ):
+                source_configured_resolvers = configured_value
+            source_scan_metadata = {
+                key: value
+                for key, value in source_scan.items()
+                if key
+                not in {
+                    "id",
+                    "started_at",
+                    "timestamp",
+                    "completed_at",
+                    "resolvers",
+                    "observed_resolvers",
+                    "configured_resolvers",
+                    "observation_count",
+                    "provenance",
+                    "extensions",
+                }
+            }
+            if isinstance(source_scan.get("extensions"), Mapping):
+                source_scan_metadata.update(dict(source_scan["extensions"]))
+        if cohort is None and isinstance(data.get("cohort"), Mapping):
+            cohort = data["cohort"]
+    elif isinstance(data, Iterable) and not isinstance(data, (str, bytes)):
+        rows = [dict(row) for row in data if isinstance(row, Mapping)]
+    else:
+        raise TypeError("snapshot data must be a DataFrame, snapshot, or iterable of mappings")
+
+    input_timestamps = [str(row["timestamp"]) for row in rows if row.get("timestamp")]
+    started_at = _iso_datetime(
+        scan_started_at or (min(input_timestamps) if input_timestamps else None)
+    )
+    completed_at = _iso_datetime(
+        scan_completed_at or (max(input_timestamps) if input_timestamps else started_at), started_at
+    )
+    observations = [normalize_observation(row) for row in rows]
+    observations.sort(key=_observation_sort_key)
+    cohort_value = _json_safe(dict(cohort)) if cohort is not None else _cohort_from_rows(rows)
+    if "count" not in cohort_value:
+        cohort_value["count"] = len(cohort_value.get("domains", []))
+
+    metadata = source_scan_metadata
+    metadata.update(dict(scan_metadata or {}))
+    metadata.setdefault("input_rows", len(rows))
+    _merge_scan_provenance(source_scan_provenance, scan_metadata)
+    for key in PROVENANCE_KEYS:
+        if key in source_scan_provenance:
+            continue
+        values = {
+            _canonical_text(row[key]): _json_safe(row[key])
+            for row in rows
+            if key in row and row.get(key) is not None
+        }
+        if len(values) == 1:
+            source_scan_provenance[key] = next(iter(values.values()))
+        elif values:
+            source_scan_provenance[key] = [values[item] for item in sorted(values)]
+    observed_resolvers = _extract_resolvers(rows, resolvers)
+    snapshot = {
+        "schema_version": SCHEMA_VERSION,
+        "scan": {
+            "id": started_at,
+            "started_at": started_at,
+            "completed_at": completed_at,
+            # ``resolvers`` is retained for one schema-v2 compatibility cycle;
+            # it is an alias of actual answer provenance, never configuration.
+            "resolvers": observed_resolvers,
+            "observed_resolvers": observed_resolvers,
+            "configured_resolvers": _extract_configured_resolvers(
+                rows, source_configured_resolvers
+            ),
+            "observation_count": len(observations),
+            "provenance": _json_safe(source_scan_provenance),
+            "extensions": _json_safe(metadata),
+        },
+        "cohort": cohort_value,
+        "observations": observations,
+        "metrics": calculate_metrics(observations),
+        "distributions": {
+            "alpn_protocols": analyze_alpn_protocols(observations),
+            "priorities": calculate_priority_distribution(observations),
+        },
+        "feature_leaders": identify_feature_leaders(observations),
+        "error_statistics": calculate_error_statistics(observations),
+    }
+    return cast(Dict[str, Any], _json_safe(snapshot))
+
+
+def _snapshot_filename(snapshot: Mapping[str, Any]) -> str:
+    scan = snapshot.get("scan")
+    if not isinstance(scan, Mapping):
+        raise ValueError("snapshot has no scan metadata")
+    started = _iso_datetime(scan.get("started_at"))
+    stamp = started.replace("T", "_").replace(":", "-").replace("Z", "")
+    return f"rfc9460_scan_{stamp}.json.gz"
+
+
+def write_snapshot(snapshot: Mapping[str, Any], scan_dir: Path) -> Path:
+    """Write a reproducible gzip-compressed canonical snapshot."""
+    if snapshot.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError(f"only schema version {SCHEMA_VERSION} snapshots can be written")
+    scan_dir.mkdir(parents=True, exist_ok=True)
+    path = scan_dir / _snapshot_filename(snapshot)
+    payload = (
+        json.dumps(_json_safe(snapshot), indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    ).encode("utf-8")
+    with path.open("wb") as raw:
+        with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as compressed:
+            compressed.write(payload)
+    return path
+
+
+def load_snapshot(path: Path) -> Dict[str, Any]:
+    """Load a compressed or plain JSON snapshot."""
+    if path.suffix == ".gz":
+        with gzip.open(path, "rt", encoding="utf-8") as source:
+            value = json.load(source)
+    else:
+        with path.open(encoding="utf-8") as source:
+            value = json.load(source)
+    if not isinstance(value, dict):
+        raise ValueError(f"snapshot must contain an object: {path}")
+    return value
+
+
+def _legacy_metrics(value: Mapping[str, Any]) -> Dict[str, Any]:
+    metrics_value = value.get("metrics")
+    old: Mapping[str, Any] = metrics_value if isinstance(metrics_value, Mapping) else {}
+    adoption_value = old.get("adoption")
+    adoption: Mapping[str, Any] = adoption_value if isinstance(adoption_value, Mapping) else {}
+    features_value = old.get("features")
+    features: Mapping[str, Any] = features_value if isinstance(features_value, Mapping) else {}
+    domains = int(old.get("unique_domains") or 0)
+    total_rows = int(old.get("total_domains_checked") or 0)
+    https_names = domains * 2 if domains else total_rows // 2
+    svcb_names = max(total_rows - https_names, 0) if total_rows else https_names
+    https_count_value = adoption.get("https_count")
+    https_count = (
+        int(https_count_value)
+        if https_count_value is not None
+        else round(float(adoption.get("overall_adoption") or 0) * https_names / 100)
+    )
+    svcb_count_value = adoption.get("svcb_count")
+    svcb_count = (
+        int(svcb_count_value)
+        if svcb_count_value is not None
+        else round(float(adoption.get("svcb_adoption") or 0) * svcb_names / 100)
+    )
+
+    def metric(count: int, denominator: int, percentage: Optional[Any] = None) -> Dict[str, Any]:
+        calculated = round(count / denominator * 100, 2) if denominator else 0.0
+        return {
+            "count": count,
+            "denominator": denominator,
+            "percentage": float(percentage) if percentage is not None else calculated,
+        }
+
+    root_count = round(float(adoption.get("root_adoption") or 0) * domains / 100)
+    www_count = round(float(adoption.get("www_adoption") or 0) * domains / 100)
+    normalized_features: Dict[str, Any] = {}
+    for name, legacy_name in (
+        ("h3_advertised", "http3_support"),
+        ("ech_advertised", "ech_deployment"),
+        ("custom_port", "custom_port"),
+        ("ipv4_hints", "ipv4_hints"),
+        ("ipv6_hints", "ipv6_hints"),
+        ("alpn_advertised", "alpn_advertised"),
+        ("no_default_alpn", "no_default_alpn"),
+    ):
+        source_value = features.get(legacy_name)
+        source: Mapping[str, Any] = source_value if isinstance(source_value, Mapping) else {}
+        normalized_features[name] = metric(
+            int(source.get("count") or 0), https_count, source.get("percentage")
+        )
+    unknown = metric(https_count + svcb_count, https_count + svcb_count)
+    zero = metric(0, https_count + svcb_count)
+    validity = {
+        "overall": {
+            "present": https_count + svcb_count,
+            "valid": zero,
+            "invalid": zero,
+            "valid_but_incompatible": zero,
+            "unknown": unknown,
+        }
+    }
+    for rrtype, count in (("https", https_count), ("svcb", svcb_count)):
+        validity[rrtype] = {
+            "present": count,
+            "valid": metric(0, count),
+            "invalid": metric(0, count),
+            "valid_but_incompatible": metric(0, count),
+            "unknown": metric(count, count),
+        }
+    return {
+        "denominators": {
+            "domains": domains,
+            "observations": total_rows,
+            "queried_names": https_names,
+            "https_names": https_names,
+            "svcb_names": svcb_names,
+            "https_observations": https_names,
+            "svcb_observations": svcb_names,
+            "root_https_names": domains,
+            "www_https_names": domains,
+            "https_present_rrsets": https_count,
+            "svcb_present_rrsets": svcb_count,
+            "usable_https_rrsets": https_count,
+            "usable_svcb_rrsets": svcb_count,
+        },
+        "adoption": {
+            "https": metric(https_count, https_names, adoption.get("overall_adoption")),
+            "root_https": metric(root_count, domains, adoption.get("root_adoption")),
+            "www_https": metric(www_count, domains, adoption.get("www_adoption")),
+            "svcb": metric(svcb_count, svcb_names, adoption.get("svcb_adoption")),
+            "overall_adoption": float(adoption.get("overall_adoption") or 0),
+            "root_adoption": float(adoption.get("root_adoption") or 0),
+            "www_adoption": float(adoption.get("www_adoption") or 0),
+            "svcb_adoption": float(adoption.get("svcb_adoption") or 0),
+            "https_count": https_count,
+            "svcb_count": svcb_count,
+        },
+        "validity": validity,
+        "features": normalized_features,
+        "compatibility": {
+            "legacy_source_feature_names": {
+                "http3_support": "h3_advertised",
+                "ech_deployment": "ech_advertised",
+            }
+        },
+    }
+
+
+def import_legacy_history(legacy_dir: Path) -> List[Dict[str, Any]]:
+    """Import only aggregate facts available in schema-v1 analysis files."""
+    entries: List[Dict[str, Any]] = []
+    for path in sorted(legacy_dir.glob("rfc9460_analysis_*.json")):
+        try:
+            value = load_snapshot(path)
+        except OSError, ValueError, json.JSONDecodeError:
+            continue
+        if value.get("schema_version") == SCHEMA_VERSION:
+            continue
+        metadata = value.get("metadata")
+        if not isinstance(metadata, Mapping) or not isinstance(value.get("metrics"), Mapping):
+            continue
+        scan_date = _iso_datetime(metadata.get("scan_date"))
+        entries.append(
+            {
+                "schema_version": 1,
+                "scan_id": f"legacy:{scan_date}",
+                "scan_date": scan_date,
+                "cohort": {
+                    "id": None,
+                    "source": None,
+                    "updated_at": None,
+                    "count": int(value["metrics"].get("unique_domains") or 0),
+                },
+                "metrics": _legacy_metrics(value),
+                "details_available": False,
+                "source_file": path.name,
+            }
+        )
+    return entries
+
+
+def _snapshot_paths(scan_dir: Path) -> List[Path]:
+    return sorted(scan_dir.glob("rfc9460_scan_*.json.gz"))
+
+
+def _detailed_snapshots(scan_dir: Path) -> List[Dict[str, Any]]:
+    snapshots: List[Dict[str, Any]] = []
+    for path in _snapshot_paths(scan_dir):
+        try:
+            snapshot = load_snapshot(path)
+        except OSError, ValueError, json.JSONDecodeError:
+            continue
+        if snapshot.get("schema_version") == SCHEMA_VERSION and isinstance(
+            snapshot.get("scan"), Mapping
+        ):
+            snapshots.append(snapshot)
+    snapshots.sort(key=lambda item: str(item["scan"].get("started_at") or ""))
+    return snapshots
+
+
+def _history_entry(snapshot: Mapping[str, Any]) -> Dict[str, Any]:
+    scan = cast(Mapping[str, Any], snapshot["scan"])
+    cohort_value = snapshot.get("cohort")
+    cohort: Mapping[str, Any] = cohort_value if isinstance(cohort_value, Mapping) else {}
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "scan_id": scan["id"],
+        "scan_date": scan["completed_at"],
+        "cohort": {
+            "id": cohort.get("id"),
+            "source": cohort.get("source"),
+            "updated_at": cohort.get("updated_at"),
+            "count": cohort.get("count"),
+        },
+        "metrics": snapshot["metrics"],
+        "details_available": True,
+    }
+
+
+def build_history(
+    snapshots: Sequence[Mapping[str, Any]], legacy_dir: Optional[Path] = None
+) -> List[Dict[str, Any]]:
+    """Combine legacy aggregates and schema-v2 history in chronological order."""
+    entries = import_legacy_history(legacy_dir) if legacy_dir else []
+    entries.extend(_history_entry(snapshot) for snapshot in snapshots)
+    deduplicated = {str(entry["scan_id"]): entry for entry in entries}
+    return sorted(deduplicated.values(), key=lambda entry: (entry["scan_date"], entry["scan_id"]))
+
+
+def _identity(observation: Mapping[str, Any]) -> Dict[str, Any]:
+    return {
+        "probe_type": observation.get("probe_type"),
+        "domain": observation.get("domain"),
+        "name": observation.get("name"),
+        "variant": observation.get("variant"),
+        "rrtype": observation.get("rrtype"),
+    }
+
+
+def _material_alias_chain(value: Any) -> List[Dict[str, Any]]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return []
+    return [
+        {key: item.get(key) for key in ("depth", "owner_name", "target_name") if key in item}
+        for item in value
+        if isinstance(item, Mapping)
+    ]
+
+
+def _material_resolved_rrsets(value: Any) -> List[Dict[str, Any]]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return []
+    fields = (
+        "owner_name",
+        "record_type",
+        "validation_status",
+        "validation_issues",
+        "records",
+    )
+    return [
+        {key: item.get(key) for key in fields if key in item}
+        for item in value
+        if isinstance(item, Mapping)
+    ]
+
+
+def _state(observation: Mapping[str, Any]) -> Dict[str, Any]:
+    effective_records = (
+        observation.get("effective_records")
+        if "effective_records" in observation
+        else observation.get("records")
+    )
+    return {
+        "status": observation.get("status"),
+        "present": observation.get("present"),
+        "records": observation.get("records") or [],
+        "validation": observation.get("validation") or {},
+        "features": observation.get("features") or {},
+        "effective_records": effective_records or [],
+        "effective_validation_status": observation.get("effective_validation_status"),
+        "alias_resolution_status": observation.get("alias_resolution_status"),
+        "alias_chain": _material_alias_chain(observation.get("alias_chain")),
+        "resolved_rrsets": _material_resolved_rrsets(observation.get("resolved_rrsets")),
+    }
+
+
+def compare_snapshots(
+    previous: Optional[Mapping[str, Any]], current: Mapping[str, Any]
+) -> Dict[str, Any]:
+    """Describe gained, lost, and materially changed observations."""
+    current_scan_value = current.get("scan")
+    current_scan: Mapping[str, Any] = (
+        current_scan_value if isinstance(current_scan_value, Mapping) else {}
+    )
+    previous_scan_value = previous.get("scan") if previous else None
+    previous_scan: Mapping[str, Any] = (
+        previous_scan_value if isinstance(previous_scan_value, Mapping) else {}
+    )
+    generated_at = current_scan.get("completed_at") or _utc_now()
+    result: Dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "generated_at": generated_at,
+        "comparable": previous is not None,
+        "from_scan": previous_scan.get("id"),
+        "to_scan": current_scan.get("id"),
+        "summary": {"gained": 0, "lost": 0, "changed": 0},
+        "gained": [],
+        "lost": [],
+        "changed": [],
+    }
+    if previous is None:
+        return result
+
+    before = {
+        _observation_key(item): item
+        for item in previous.get("observations", [])
+        if isinstance(item, Mapping)
+    }
+    after = {
+        _observation_key(item): item
+        for item in current.get("observations", [])
+        if isinstance(item, Mapping)
+    }
+    for key in sorted(set(before) | set(after)):
+        old = before.get(key)
+        new = after.get(key)
+        old_present = bool(old and old.get("present"))
+        new_present = bool(new and new.get("present"))
+        if new_present and not old_present and new is not None:
+            result["gained"].append({**_identity(new), "after": _state(new)})
+        elif old_present and not new_present and old is not None:
+            result["lost"].append({**_identity(old), "before": _state(old)})
+        elif old_present and new_present and old is not None and new is not None:
+            old_state = _state(old)
+            new_state = _state(new)
+            fields = [field for field in old_state if old_state[field] != new_state[field]]
+            if fields:
+                result["changed"].append(
+                    {
+                        **_identity(new),
+                        "fields": fields,
+                        "before": old_state,
+                        "after": new_state,
+                    }
+                )
+    result["summary"] = {name: len(result[name]) for name in ("gained", "lost", "changed")}
+    return result
+
+
+def generate_pages_data(
+    snapshot: Mapping[str, Any],
+    *,
+    scan_dir: Path,
+    pages_dir: Path,
+    legacy_dir: Optional[Path] = None,
+) -> Dict[str, Path]:
+    """Generate deterministic latest, history, and changes dashboard data."""
+    snapshots = _detailed_snapshots(scan_dir)
+    current_id = snapshot["scan"]["id"]
+    if not any(item["scan"]["id"] == current_id for item in snapshots):
+        snapshots.append(dict(snapshot))
+        snapshots.sort(key=lambda item: item["scan"]["started_at"])
+    current_index = next(
+        index for index, item in enumerate(snapshots) if item["scan"]["id"] == current_id
+    )
+    previous = snapshots[current_index - 1] if current_index else None
+    generated_at = snapshot["scan"]["completed_at"]
+    history = {
+        "schema_version": SCHEMA_VERSION,
+        "generated_at": generated_at,
+        "entries": build_history(snapshots, legacy_dir),
+    }
+    changes = compare_snapshots(previous, snapshot)
+    return {
+        "latest": _write_json(pages_dir / "latest.json", snapshot),
+        "history": _write_json(pages_dir / "history.json", history),
+        "changes": _write_json(pages_dir / "changes.json", changes),
+    }
+
+
+def _load_input(path: Path) -> Any:
+    if path.suffix.lower() == ".csv":
+        return pd.read_csv(path)
+    return load_snapshot(path)
+
+
+def run_pipeline(
+    input_path: Path,
+    *,
+    scan_dir: Path,
+    pages_dir: Path,
+    legacy_dir: Optional[Path] = None,
+    cohort_path: Optional[Path] = None,
+    scan_started_at: Optional[str] = None,
+) -> Dict[str, Path]:
+    """Build and persist a canonical snapshot and all Pages data."""
+    data = _load_input(input_path)
+    cohort = load_cohort(cohort_path)
+    snapshot = build_snapshot(data, scan_started_at=scan_started_at, cohort=cohort)
+    snapshot_path = write_snapshot(snapshot, scan_dir)
+    paths = generate_pages_data(
+        snapshot, scan_dir=scan_dir, pages_dir=pages_dir, legacy_dir=legacy_dir
+    )
+    return {"snapshot": snapshot_path, **paths}
+
+
+def verify_pages_data(
+    latest_path: Path,
+    *,
+    scan_dir: Path,
+    max_age_hours: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Verify that all generated data describes the newest canonical scan."""
+    pages_dir = latest_path.parent
+    history_path = pages_dir / "history.json"
+    changes_path = pages_dir / "changes.json"
+    missing = [path for path in (latest_path, history_path, changes_path) if not path.is_file()]
+    if missing:
+        raise ValueError(
+            "missing generated Pages data: " + ", ".join(str(path) for path in missing)
+        )
+    latest = load_snapshot(latest_path)
+    history = load_snapshot(history_path)
+    changes = load_snapshot(changes_path)
+    snapshots = _detailed_snapshots(scan_dir)
+    if not snapshots:
+        raise ValueError(f"no schema-v2 snapshots found in {scan_dir}")
+    newest = snapshots[-1]
+    scan_id = latest.get("scan", {}).get("id")
+    if latest != newest:
+        raise ValueError("latest.json does not exactly match the newest canonical snapshot")
+    v2_entries = [
+        entry
+        for entry in history.get("entries", [])
+        if isinstance(entry, Mapping) and entry.get("schema_version") == SCHEMA_VERSION
+    ]
+    if not v2_entries or v2_entries[-1].get("scan_id") != scan_id:
+        raise ValueError("history.json does not end with the latest schema-v2 scan")
+    if changes.get("to_scan") != scan_id:
+        raise ValueError("changes.json does not target the latest scan")
+    completed_at = latest.get("scan", {}).get("completed_at")
+    if history.get("generated_at") != completed_at or changes.get("generated_at") != completed_at:
+        raise ValueError("generated data timestamps do not match the latest completed scan")
+    if max_age_hours is not None:
+        completed = datetime.fromisoformat(str(completed_at).replace("Z", "+00:00"))
+        age_hours = (datetime.now(timezone.utc) - completed).total_seconds() / 3600
+        if age_hours > max_age_hours:
+            raise ValueError(
+                f"latest scan is {age_hours:.1f} hours old (limit: {max_age_hours:.1f} hours)"
+            )
+    return {"scan_id": scan_id, "completed_at": completed_at, "files": 3}
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Build and verify RFC 9460 tracker data")
+    commands = parser.add_subparsers(dest="command", required=True)
+    build = commands.add_parser("build", help="build a canonical snapshot and Pages JSON")
+    build.add_argument("--input", type=Path, required=True)
+    build.add_argument("--scan-dir", type=Path, default=Path("data/scans"))
+    build.add_argument("--pages-dir", type=Path, default=Path("docs/data"))
+    build.add_argument("--legacy-dir", type=Path, default=Path("results"))
+    build.add_argument(
+        "--cohort",
+        type=Path,
+        help="cohort JSON file (defaults to the bundled tracked cohort)",
+    )
+    build.add_argument("--scan-time", help="override the scan start time")
+
+    verify = commands.add_parser("verify", help="verify freshness and generated-data consistency")
+    verify.add_argument("--latest", type=Path, default=Path("docs/data/latest.json"))
+    verify.add_argument("--scan-dir", type=Path, default=Path("data/scans"))
+    verify.add_argument("--max-age-hours", type=float, default=48.0)
+    return parser
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    """Run the build or verification command."""
+    args = _parser().parse_args(argv)
+    if args.command == "build":
+        paths = run_pipeline(
+            args.input,
+            scan_dir=args.scan_dir,
+            pages_dir=args.pages_dir,
+            legacy_dir=args.legacy_dir,
+            cohort_path=args.cohort,
+            scan_started_at=args.scan_time,
+        )
+        print(json.dumps({name: str(path) for name, path in paths.items()}, sort_keys=True))
+        return 0
+    result = verify_pages_data(
+        args.latest, scan_dir=args.scan_dir, max_age_hours=args.max_age_hours
+    )
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

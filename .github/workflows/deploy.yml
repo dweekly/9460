@@ -5,7 +5,10 @@ on:
     branches: [main]
     paths:
       - 'docs/**'
-      - 'data/processed/**'
+      - 'data/scans/**'
+  workflow_run:
+    workflows: ['Scheduled RFC 9460 Scan']
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -14,79 +17,62 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  group: github-pages
+  cancel-in-progress: true
 
 jobs:
   build:
-    name: Build GitHub Pages
+    name: Verify and package site
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          ref: main
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
-          python-version: '3.11'
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: requirements.txt
 
-      - name: Install dependencies
+      - name: Install project
         run: |
           python -m pip install --upgrade pip
-          pip install pandas jinja2
+          python -m pip install -r requirements.txt
 
-      - name: Generate site data
+      - name: Verify deployed data identity and freshness
         run: |
-          python -c "
-          import json
-          import pandas as pd
-          from pathlib import Path
-          from datetime import datetime
+          python -m src.analyzer.pipeline verify \
+            --latest docs/data/latest.json \
+            --scan-dir data/scans \
+            --max-age-hours 48
 
-          # Create docs directory if it doesn't exist
-          docs_dir = Path('docs')
-          docs_dir.mkdir(exist_ok=True)
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
 
-          # Load latest statistics if available
-          stats_file = Path('data/processed/latest_stats.json')
-          if stats_file.exists():
-              with open(stats_file) as f:
-                  stats = json.load(f)
-          else:
-              # Default stats if no data yet
-              stats = {
-                  'scan_date': datetime.now().isoformat(),
-                  'total_domains': 0,
-                  'https_adoption': 0,
-                  'http3_support': 0,
-                  'ech_deployment': 0,
-                  'top_http3_domains': []
-              }
-
-          # Save stats for JavaScript consumption
-          docs_data_dir = docs_dir / 'data'
-          docs_data_dir.mkdir(exist_ok=True)
-          with open(docs_data_dir / 'stats.json', 'w') as f:
-              json.dump(stats, f, indent=2)
-
-          print(f'Generated site data in {docs_data_dir}')
-          "
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Upload verified site
+        uses: actions/upload-pages-artifact@v5
         with:
           path: ./docs
 
   deploy:
-    name: Deploy to GitHub Pages
+    name: Deploy verified site
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
+
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

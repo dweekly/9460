@@ -2,6 +2,19 @@
 
 from unittest.mock import Mock
 
+import dns.rdata
+import dns.rdataclass
+import dns.rdatatype
+
+from src.rfc9460_checker.models import (
+    CLIENT_SUPPORTED_PARAM_KEYS,
+    DECODED_PARAM_KEYS,
+    PARSER_LIMITATIONS,
+    REGISTERED_PARAM_KEYS,
+    SVCPARAM_REGISTRY_METADATA,
+    VALIDATOR_RULESET_VERSION,
+    param_key_name,
+)
 from src.rfc9460_checker.parser import (
     _parse_alpn,
     _parse_ip_hint,
@@ -9,6 +22,11 @@ from src.rfc9460_checker.parser import (
     parse_https_record,
     parse_svcb_record,
 )
+
+
+def https_rdata(text: str):
+    """Build a real dnspython HTTPS RDATA fixture from presentation text."""
+    return dns.rdata.from_text(dns.rdataclass.IN, dns.rdatatype.HTTPS, text)
 
 
 class TestParseHttpsRecord:
@@ -54,7 +72,7 @@ class TestParseHttpsRecord:
         assert result["ech_config"] is False
 
     def test_parse_multiple_https_records(self) -> None:
-        """Test parsing multiple HTTPS records (chooses lowest priority)."""
+        """Test parsing multiple HTTPS records without discarding either one."""
         mock_rdata1 = Mock()
         mock_rdata1.priority = 10
         mock_rdata1.target = "backup.example.com."
@@ -76,6 +94,113 @@ class TestParseHttpsRecord:
         assert result["https_target"] == "primary.example.com."
         assert result["alpn_protocols"] == "h3"
         assert result["has_http3"] is True
+        assert result["record_count"] == 2
+        assert [record["priority"] for record in result["records"]] == [1, 10]
+
+    def test_parse_real_complete_rrset(self) -> None:
+        """Known and unknown parameters remain JSON-safe in a full RRset."""
+        answers = [
+            https_rdata(
+                '1 . alpn="h3,h2" no-default-alpn port="8443" '
+                'ipv4hint="192.0.2.1,192.0.2.2" ech="AAEC" '
+                'ipv6hint="2001:db8::1"'
+            ),
+            https_rdata('2 backup.example. alpn="h2" key65400="opaque"'),
+        ]
+
+        result = parse_https_record(answers, owner_name="example.com")
+
+        assert result["schema_version"] == 2
+        assert result["probe_type"] == "dns"
+        assert result["validation_status"] == "valid"
+        assert result["record_count"] == 2
+        first, second = result["records"]
+        assert first["mode"] == "service"
+        assert first["params"]["alpn"] == ["h3", "h2"]
+        assert first["params"]["no-default-alpn"] is True
+        assert first["params"]["port"] == 8443
+        assert first["params"]["ipv4hint"] == ["192.0.2.1", "192.0.2.2"]
+        assert first["params"]["ech"] == {"encoding": "base64", "value": "AAEC"}
+        assert first["params"]["ipv6hint"] == ["2001:db8::1"]
+        assert first["raw"].startswith("1 .")
+        assert second["params"]["key65400"] == {
+            "encoding": "base64",
+            "value": "b3BhcXVl",
+        }
+        assert second["param_details"][1]["known"] is False
+
+    def test_unknown_mandatory_key_is_incompatible(self) -> None:
+        """Unknown listed mandatory keys classify a record as incompatible."""
+        answers = [https_rdata('1 svc.example. mandatory="key65400" key65400="opaque"')]
+
+        result = parse_https_record(answers, owner_name="example.com")
+
+        assert result["validation_status"] == "valid_but_incompatible"
+        assert result["records"][0]["validity"] == "valid_but_incompatible"
+        assert result["records"][0]["usable"] is False
+        assert result["validation_issues"][0]["code"] == "unsupported_mandatory_param"
+
+    def test_answer_metadata_is_preserved(self) -> None:
+        """Query and post-CNAME RRset names remain distinct in metadata."""
+
+        class RRset:
+            ttl = 300
+            name = "rrset-owner.example."
+
+        class Answer(list):
+            nameserver = "1.1.1.1"
+            port = 53
+            qname = "query.example."
+            rrset = RRset()
+            name = "wrong-fallback.example."
+            canonical_name = "canonical.example."
+
+        answer = Answer([https_rdata('1 . alpn="h2"')])
+
+        result = parse_https_record(answer)
+
+        assert result["ttl"] == 300
+        assert result["resolver"] == "1.1.1.1"
+        assert result["resolver_port"] == 53
+        assert result["query_name"] == "query.example."
+        assert result["rrset_owner_name"] == "rrset-owner.example."
+        assert result["owner_name"] == "rrset-owner.example."
+        assert result["canonical_name"] == "canonical.example."
+
+    def test_registry_metadata_distinguishes_registration_and_support(self) -> None:
+        """The IANA registry does not overstate parser or client capabilities."""
+        result = parse_https_record(
+            [https_rdata('1 . mandatory="key9" key9="\\000\\002"')],
+            owner_name="example.com",
+        )
+
+        assert REGISTERED_PARAM_KEYS == frozenset(range(13))
+        assert DECODED_PARAM_KEYS == frozenset(range(7))
+        assert 5 not in CLIENT_SUPPORTED_PARAM_KEYS
+        assert not set(range(7, 13)).intersection(CLIENT_SUPPORTED_PARAM_KEYS)
+        assert param_key_name(9) == "tls-supported-groups"
+        assert SVCPARAM_REGISTRY_METADATA["version"] == "2026-06-25"
+        assert result["validator_ruleset_version"] == VALIDATOR_RULESET_VERSION
+        detail = next(item for item in result["records"][0]["param_details"] if item["key"] == 9)
+        assert detail["registered"] is True
+        assert detail["decoded"] is False
+        assert detail["client_supported"] is False
+        assert detail["registry_reference"].startswith("draft-ietf-tls")
+        assert result["validation_status"] == "valid_but_incompatible"
+
+    def test_compatibility_http3_projection_requires_exact_h3(self) -> None:
+        """Historic draft ALPN IDs are not reported as current HTTP/3 support."""
+        result = parse_https_record([https_rdata('1 . alpn="h3-29"')], owner_name="example.com")
+
+        assert result["alpn_protocols"] == "h3-29"
+        assert result["has_http3"] is False
+
+    def test_parser_discloses_raw_wire_validation_limit(self) -> None:
+        """Snapshots state that raw-wire validation is delegated to dnspython."""
+        result = parse_https_record([https_rdata('1 . alpn="h2"')])
+
+        assert tuple(result["parser_limitations"]) == PARSER_LIMITATIONS
+        assert any("raw-wire" in limitation for limitation in PARSER_LIMITATIONS)
 
 
 class TestParseSvcbRecord:

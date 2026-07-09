@@ -2,6 +2,9 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import dns.rdata
+import dns.rdataclass
+import dns.rdatatype
 import dns.resolver
 import pytest
 
@@ -58,6 +61,7 @@ class TestRFC9460Checker:
 
             assert result["has_https_record"] is False
             assert result["query_error"] == "NXDOMAIN"
+            assert result["validation_status"] == "not_applicable"
 
     @pytest.mark.asyncio
     async def test_query_https_record_no_answer(self, checker):
@@ -71,6 +75,7 @@ class TestRFC9460Checker:
 
             assert result["has_https_record"] is False
             assert result["query_error"] == "No HTTPS record"
+            assert result["validation_status"] == "not_applicable"
 
     @pytest.mark.asyncio
     async def test_query_https_record_timeout(self, checker):
@@ -84,6 +89,7 @@ class TestRFC9460Checker:
 
             assert result["has_https_record"] is False
             assert result["query_error"] == "Timeout"
+            assert result["validation_status"] == "not_applicable"
 
     @pytest.mark.asyncio
     async def test_query_https_record_with_subdomain(self, checker):
@@ -127,10 +133,13 @@ class TestRFC9460Checker:
 
     @pytest.mark.asyncio
     async def test_check_domain_both_subdomains(self, checker):
-        """Test checking both root and www subdomains."""
+        """The website scan emits only root and www HTTPS observations."""
         domain = "example.com"
 
-        with patch.object(checker, "query_https_record", new_callable=AsyncMock) as mock_query:
+        with (
+            patch.object(checker, "query_https_record", new_callable=AsyncMock) as mock_query,
+            patch.object(checker, "query_svcb_record", new_callable=AsyncMock) as mock_svcb,
+        ):
             mock_query.side_effect = [
                 {"subdomain": "root", "has_https_record": True},
                 {"subdomain": "www", "has_https_record": False},
@@ -138,11 +147,10 @@ class TestRFC9460Checker:
 
             results = await checker.check_domain(domain)
 
-            assert len(results) == 4  # 2 subdomains × 2 record types
-            # Check we have both HTTPS and SVCB results
-            https_results = [r for r in results if r.get("record_type") == "HTTPS"]
-            assert len(https_results) == 2
+            assert len(results) == 2
+            assert all(result["record_type"] == "HTTPS" for result in results)
             assert mock_query.call_count == 2
+            mock_svcb.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_check_domain_exception_handling(self, checker):
@@ -157,7 +165,7 @@ class TestRFC9460Checker:
 
             results = await checker.check_domain(domain)
 
-            assert len(results) == 4  # 2 subdomains × 2 record types
+            assert len(results) == 2
             # First HTTPS query failed
             assert any(r["query_error"] == "Query failed" for r in results)
 
@@ -195,6 +203,17 @@ class TestRFC9460Checker:
             assert result["svcb_priority"] == 1
             assert result["svcb_target"] == "service.example.com."
 
+    @pytest.mark.asyncio
+    async def test_explicit_svcb_query_allows_protocol_query_name(self, checker):
+        """The public SVCB API accepts an underscored protocol query name."""
+        with patch.object(checker.resolver, "resolve", new_callable=AsyncMock) as resolve:
+            resolve.return_value = []
+            result = await checker.query_svcb_record("example.com", "_dns")
+
+        assert result["query_name"] == "_dns.example.com"
+        assert result["subdomain"] == "_dns"
+        resolve.assert_called_once_with("_dns.example.com", "SVCB")
+
     def test_clear_cache(self, checker):
         """Test cache clearing."""
         # Add some items to cache
@@ -216,3 +235,88 @@ class TestRFC9460Checker:
         assert checker.dns_servers == dns_servers
         assert checker.resolver.timeout == timeout
         assert checker.throttler.rate_limit == rate_limit
+
+    @pytest.mark.asyncio
+    async def test_schema_v2_and_resolver_provenance(self, checker):
+        """The observation retains answer provenance and complete records."""
+
+        class Answer(list):
+            ttl = 600
+            nameserver = "1.1.1.1"
+            port = 53
+            canonical_name = "example.com."
+
+        rdata = dns.rdata.from_text(
+            dns.rdataclass.IN,
+            dns.rdatatype.HTTPS,
+            '1 . alpn="h3,h2"',
+        )
+        with patch.object(checker.resolver, "resolve", new_callable=AsyncMock) as resolve:
+            resolve.return_value = Answer([rdata])
+
+            result = await checker.query_https_record("example.com")
+
+        assert result["schema_version"] == 2
+        assert result["probe_type"] == "dns"
+        assert result["query_status"] == "present"
+        assert result["resolver"] == "1.1.1.1"
+        assert result["ttl"] == 600
+        assert result["record_count"] == 1
+        assert result["records"][0]["params"]["alpn"] == ["h3", "h2"]
+
+    @pytest.mark.asyncio
+    async def test_follows_alias_mode_with_a_bound(self, checker):
+        """Alias resolution keeps both RRsets and exposes terminal records."""
+        alias = dns.rdata.from_text(
+            dns.rdataclass.IN,
+            dns.rdatatype.HTTPS,
+            "0 service.example.",
+        )
+        service = dns.rdata.from_text(
+            dns.rdataclass.IN,
+            dns.rdatatype.HTTPS,
+            '1 . alpn="h3"',
+        )
+
+        async def resolve(owner_name, record_type):
+            assert record_type == "HTTPS"
+            return [alias] if owner_name == "example.com" else [service]
+
+        with patch.object(checker.resolver, "resolve", new_callable=AsyncMock) as mock_resolve:
+            mock_resolve.side_effect = resolve
+            result = await checker.query_https_record("example.com")
+
+        assert result["records"][0]["mode"] == "alias"
+        assert result["alias_resolution_status"] == "resolved"
+        assert result["alias_chain"][0]["target_name"] == "service.example."
+        assert result["effective_records"][0]["params"]["alpn"] == ["h3"]
+        assert len(result["resolved_rrsets"]) == 2
+        assert mock_resolve.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_detects_alias_loop(self, checker):
+        """An AliasMode cycle terminates as a resolution warning."""
+        first = dns.rdata.from_text(
+            dns.rdataclass.IN,
+            dns.rdatatype.HTTPS,
+            "0 service.example.",
+        )
+        second = dns.rdata.from_text(
+            dns.rdataclass.IN,
+            dns.rdatatype.HTTPS,
+            "0 example.com.",
+        )
+
+        async def resolve(owner_name, record_type):
+            assert record_type == "HTTPS"
+            return [first] if owner_name == "example.com" else [second]
+
+        with patch.object(checker.resolver, "resolve", new_callable=AsyncMock) as mock_resolve:
+            mock_resolve.side_effect = resolve
+            result = await checker.query_https_record("example.com")
+
+        assert result["alias_resolution_status"] == "loop"
+        assert result["validation_status"] == "valid"
+        assert result["resolution_issues"][0]["severity"] == "warning"
+        assert result["effective_records"] == []
+        assert len(result["alias_chain"]) == 2

@@ -3,13 +3,13 @@
 import logging
 import sys
 from pathlib import Path
-from typing import Any, List, Optional, Union
+from typing import Any
 
 
 def setup_logging(
-    level: Union[str, int] = "INFO",
-    log_file: Optional[str] = None,
-    format_string: Optional[str] = None,
+    level: str | int = "INFO",
+    log_file: str | None = None,
+    format_string: str | None = None,
 ) -> None:
     """Set up logging configuration.
 
@@ -21,7 +21,7 @@ def setup_logging(
     if format_string is None:
         format_string = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
-    handlers: List[Any] = [logging.StreamHandler(sys.stdout)]
+    handlers: list[Any] = [logging.StreamHandler(sys.stdout)]
 
     if log_file:
         # Create log directory if needed

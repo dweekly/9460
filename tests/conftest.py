@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 from unittest.mock import Mock
 
 import pytest
@@ -43,7 +43,7 @@ def sample_domain_list() -> list[str]:
 
 
 @pytest.fixture
-def sample_https_result() -> Dict[str, Any]:
+def sample_https_result() -> dict[str, Any]:
     """Provide a sample HTTPS query result."""
     return {
         "domain": "example.com",

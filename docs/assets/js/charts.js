@@ -1,250 +1,148 @@
-// Chart.js configurations for RFC 9460 Adoption Tracker
+(() => {
+    "use strict";
 
-// Chart defaults
-Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
-Chart.defaults.font.size = 12;
+    const palette = {
+        primary: "#3156b8",
+        secondary: "#8ea1d6",
+        success: "#198754",
+        warning: "#e0a800",
+        danger: "#dc3545",
+        muted: "#dfe5ef",
+        ink: "#172033",
+    };
+    const instances = {};
 
-// Color palette
-const colors = {
-    primary: '#0d6efd',
-    success: '#198754',
-    warning: '#ffc107',
-    info: '#0dcaf0',
-    danger: '#dc3545',
-    secondary: '#6c757d',
-    light: '#f8f9fa',
-    dark: '#212529'
-};
+    function destroy(name) {
+        if (instances[name]) instances[name].destroy();
+    }
 
-// Initialize charts when DOM is ready
-document.addEventListener('DOMContentLoaded', function() {
-    initAdoptionChart();
-    initFeaturesChart();
-    // Timeline chart removed - only one data point available
-    initAlpnChart();
-    initPriorityChart();
-});
+    function metricCount(metric) {
+        if (Number.isFinite(metric?.count)) return metric.count;
+        if (Number.isFinite(metric?.percentage) && Number.isFinite(metric?.total)) return metric.percentage / 100 * metric.total;
+        return 0;
+    }
 
-// Overall Adoption Chart
-function initAdoptionChart() {
-    const ctx = document.getElementById('adoptionChart');
-    if (!ctx) return;
-
-    new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-            labels: ['Has HTTPS Record', 'No HTTPS Record'],
-            datasets: [{
-                data: [18, 182],
-                backgroundColor: [colors.success, colors.light],
-                borderColor: [colors.success, '#dee2e6'],
-                borderWidth: 2
-            }]
-        },
-        options: {
+    function commonOptions() {
+        return {
             responsive: true,
-            maintainAspectRatio: true,
+            maintainAspectRatio: false,
             plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: {
-                        padding: 15,
-                        font: {
-                            size: 14
-                        }
-                    }
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                            const percentage = ((context.parsed / total) * 100).toFixed(1);
-                            return context.label + ': ' + context.parsed + ' (' + percentage + '%)';
-                        }
-                    }
-                },
-                datalabels: {
-                    formatter: (value, ctx) => {
-                        const sum = ctx.dataset.data.reduce((a, b) => a + b, 0);
-                        const percentage = ((value / sum) * 100).toFixed(1) + '%';
-                        return percentage;
-                    },
-                    color: '#fff',
-                    font: {
-                        weight: 'bold',
-                        size: 16
-                    }
-                }
-            }
-        },
-        plugins: [ChartDataLabels]
-    });
-}
-
-// Features Distribution Chart
-function initFeaturesChart() {
-    const ctx = document.getElementById('featuresChart');
-    if (!ctx) return;
-
-    new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: ['HTTP/3', 'IPv4 Hints', 'IPv6 Hints', 'ECH Config'],
-            datasets: [{
-                label: 'Percentage of HTTPS-enabled domains',
-                data: [72, 56, 33, 0],
-                backgroundColor: [colors.info, colors.primary, colors.success, colors.secondary],
-                borderColor: [colors.info, colors.primary, colors.success, colors.secondary],
-                borderWidth: 2
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: true,
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    max: 100,
-                    ticks: {
-                        callback: function(value) {
-                            return value + '%';
-                        }
-                    },
-                    grid: {
-                        borderDash: [5, 5]
-                    }
-                },
-                x: {
-                    grid: {
-                        display: false
-                    }
-                }
+                legend: { position: "bottom", labels: { usePointStyle: true, padding: 18 } },
+                tooltip: { padding: 10 },
             },
-            plugins: {
-                legend: {
-                    display: false
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            return context.parsed.y + '% of HTTPS-enabled domains';
-                        }
-                    }
-                }
-            }
-        }
-    });
-}
+        };
+    }
 
-// Timeline chart removed - only one data point available
-// Will be re-added when historical data is collected
-
-// ALPN Protocol Distribution
-function initAlpnChart() {
-    const ctx = document.getElementById('alpnChart');
-    if (!ctx) return;
-
-    new Chart(ctx, {
-        type: 'pie',
-        data: {
-            labels: ['h3 (HTTP/3)', 'h2 (HTTP/2)', 'No ALPN'],
-            datasets: [{
-                data: [13, 3, 2],
-                backgroundColor: [colors.primary, colors.info, colors.light],
-                borderColor: ['#fff', '#fff', '#fff'],
-                borderWidth: 2
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: true,
-            plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: {
-                        padding: 15,
-                        font: {
-                            size: 14
-                        }
-                    }
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                            const percentage = ((context.parsed / total) * 100).toFixed(1);
-                            return context.label + ': ' + context.parsed + ' domains (' + percentage + '%)';
-                        }
-                    }
-                }
-            }
-        }
-    });
-}
-
-// Priority Values Chart
-function initPriorityChart() {
-    const ctx = document.getElementById('priorityChart');
-    if (!ctx) return;
-
-    new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: ['Priority 1', 'Priority 2', 'Priority 3', 'Priority 4', 'Priority 5'],
-            datasets: [{
-                label: 'Number of domains',
-                data: [18, 0, 0, 0, 0],
-                backgroundColor: colors.warning,
-                borderColor: colors.warning,
-                borderWidth: 2
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: true,
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    max: 20,
-                    ticks: {
-                        stepSize: 5
-                    },
-                    title: {
-                        display: true,
-                        text: 'Number of Domains',
-                        font: {
-                            size: 14
-                        }
-                    },
-                    grid: {
-                        borderDash: [5, 5]
-                    }
-                },
-                x: {
-                    title: {
-                        display: true,
-                        text: 'HTTPS Record Priority',
-                        font: {
-                            size: 14
-                        }
-                    },
-                    grid: {
-                        display: false
-                    }
-                }
+    function renderAdoption(latest) {
+        destroy("adoption");
+        const metric = latest.adoption.https;
+        const present = metricCount(metric);
+        const total = Number.isFinite(metric.total) ? metric.total : present;
+        instances.adoption = new Chart(document.getElementById("adoptionChart"), {
+            type: "doughnut",
+            data: {
+                labels: ["HTTPS RRset observed", "No HTTPS RRset observed"],
+                datasets: [{ data: [present, Math.max(total - present, 0)], backgroundColor: [palette.success, palette.muted], borderWidth: 0 }],
             },
-            plugins: {
-                legend: {
-                    display: false
+            options: { ...commonOptions(), cutout: "68%" },
+        });
+    }
+
+    function renderFeatures(latest) {
+        destroy("features");
+        instances.features = new Chart(document.getElementById("featuresChart"), {
+            type: "bar",
+            data: {
+                labels: latest.features.map((feature) => feature.label),
+                datasets: [{
+                    label: "Advertised by eligible records (%)",
+                    data: latest.features.map((feature) => feature.percentage ?? 0),
+                    backgroundColor: [palette.primary, "#7a5ab5", palette.secondary, "#cc7a28", "#2684a8", "#50a37f", palette.warning],
+                    borderRadius: 5,
+                }],
+            },
+            options: {
+                ...commonOptions(),
+                scales: {
+                    y: { beginAtZero: true, suggestedMax: 100, ticks: { callback: (value) => `${value}%` }, grid: { color: "#eef1f6" } },
+                    x: { grid: { display: false } },
                 },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            return context.parsed.y + ' domains use ' + context.label.toLowerCase();
-                        }
-                    }
-                }
-            }
-        }
-    });
-}
+                plugins: { ...commonOptions().plugins, legend: { display: false } },
+            },
+        });
+    }
+
+    function renderValidity(latest) {
+        destroy("validity");
+        const metrics = [latest.validity.valid, latest.validity.incompatible, latest.validity.invalid, latest.validity.unknown];
+        instances.validity = new Chart(document.getElementById("validityChart"), {
+            type: "doughnut",
+            data: {
+                labels: ["Valid", "Valid but incompatible", "Invalid", "Unknown / not assessed"],
+                datasets: [{ data: metrics.map(metricCount), backgroundColor: [palette.success, palette.warning, palette.danger, palette.muted], borderWidth: 0 }],
+            },
+            options: { ...commonOptions(), cutout: "64%" },
+        });
+    }
+
+    function renderHistory(history) {
+        destroy("history");
+        instances.history = new Chart(document.getElementById("historyChart"), {
+            type: "line",
+            data: {
+                labels: history.map((entry) => entry.date),
+                datasets: [{
+                    label: "HTTPS queried-name adoption",
+                    data: history.map((entry) => entry.adoption.percentage),
+                    borderColor: palette.primary,
+                    backgroundColor: "rgba(49, 86, 184, .12)",
+                    pointBackgroundColor: history.map((entry) => entry.schemaVersion >= 2 ? palette.primary : palette.secondary),
+                    pointRadius: history.map((entry) => entry.schemaVersion >= 2 ? 3 : 1.5),
+                    borderWidth: 2,
+                    fill: true,
+                    tension: .16,
+                }],
+            },
+            options: {
+                ...commonOptions(),
+                scales: {
+                    y: { beginAtZero: true, suggestedMax: 25, ticks: { callback: (value) => `${value}%` }, title: { display: true, text: "Queried names with HTTPS RRsets" } },
+                    x: {
+                        ticks: {
+                            autoSkip: true,
+                            maxTicksLimit: 12,
+                            callback(value) {
+                                const raw = this.getLabelForValue(value);
+                                const date = new Date(raw);
+                                return Number.isNaN(date.getTime()) ? raw : date.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+                            },
+                        },
+                        grid: { display: false },
+                    },
+                },
+                plugins: {
+                    ...commonOptions().plugins,
+                    tooltip: {
+                        callbacks: {
+                            title: (items) => items[0] ? new Date(items[0].label).toLocaleString() : "",
+                            label: (context) => `${context.parsed.y.toFixed(2)}% adoption`,
+                            afterLabel: (context) => `Schema v${history[context.dataIndex]?.schemaVersion || 1}`,
+                        },
+                    },
+                },
+            },
+        });
+    }
+
+    window.RFC9460Charts = {
+        render(latest, history) {
+            if (typeof Chart === "undefined") return;
+            Chart.defaults.color = "#667085";
+            Chart.defaults.font.family = "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+            renderAdoption(latest);
+            renderFeatures(latest);
+            renderValidity(latest);
+            renderHistory(history);
+        },
+    };
+})();

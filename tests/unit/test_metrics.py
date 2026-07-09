@@ -9,7 +9,10 @@ from src.analyzer.metrics import (
     calculate_compliance_metrics,
     calculate_error_statistics,
     calculate_feature_distribution,
+    calculate_metrics,
     calculate_priority_distribution,
+    calculate_validity_metrics,
+    identify_feature_leaders,
     identify_top_performers,
 )
 
@@ -103,6 +106,10 @@ class TestMetrics:
 
         assert features["ech_deployment"]["count"] == 1
         assert features["ech_deployment"]["percentage"] == 50.0  # 1/2 HTTPS records
+        assert features["_deprecated_aliases"] == {
+            "http3_support": "h3_advertised",
+            "ech_deployment": "ech_advertised",
+        }
 
         assert features["ipv4_hints"]["count"] == 1
         assert features["ipv6_hints"]["count"] == 1
@@ -126,15 +133,50 @@ class TestMetrics:
         assert features["http3_support"]["count"] == 0
         assert features["http3_support"]["percentage"] == 0.0
 
+    def test_custom_port_excludes_explicit_default(self):
+        """An explicit HTTPS port 443 is not a custom-port deployment."""
+        data = pd.DataFrame(
+            [
+                {"has_https_record": True, "port": 443},
+                {"has_https_record": True, "port": 8443},
+            ]
+        )
+
+        features = calculate_feature_distribution(data)
+
+        assert features["custom_port"] == {
+            "count": 1,
+            "denominator": 2,
+            "percentage": 50.0,
+        }
+
     def test_calculate_compliance_metrics(self, sample_data):
-        """Test comprehensive compliance metrics calculation."""
+        """Test the one-release compatibility alias."""
         metrics = calculate_compliance_metrics(sample_data)
 
         assert "adoption" in metrics
         assert "features" in metrics
-        assert "average_compliance_score" in metrics
+        assert "average_compliance_score" not in metrics
         assert metrics["total_domains_checked"] == 4
         assert metrics["unique_domains"] == 2
+
+    def test_explicit_denominators_and_validity(self, sample_data):
+        """HTTPS denominators count names, not unrelated SVCB query rows."""
+        metrics = calculate_metrics(sample_data)
+
+        assert metrics["denominators"]["domains"] == 2
+        assert metrics["denominators"]["https_names"] == 4
+        assert metrics["denominators"]["https_present_rrsets"] == 2
+        assert metrics["adoption"]["https"] == {
+            "count": 2,
+            "denominator": 4,
+            "percentage": 50.0,
+        }
+        assert "h3_advertised" in metrics["features"]
+        assert "ech_advertised" in metrics["features"]
+        assert "http3_support" not in metrics["features"]
+        assert "ech_deployment" not in metrics["features"]
+        assert calculate_validity_metrics(sample_data)["https"]["unknown"]["count"] == 2
 
     def test_analyze_alpn_protocols(self, sample_data):
         """Test ALPN protocol analysis."""
@@ -164,8 +206,8 @@ class TestMetrics:
         assert top_performers[0][0] == "example1.com"  # Should have higher score
         assert top_performers[0][1] > 0  # Should have non-zero score
 
-    def test_identify_top_performers_scoring(self):
-        """Test compliance scoring logic."""
+    def test_identify_feature_leaders(self):
+        """Domains are described by observed features, not a synthetic score."""
         data = pd.DataFrame(
             [
                 {
@@ -189,19 +231,32 @@ class TestMetrics:
             ]
         )
 
-        top_performers = identify_top_performers(data, top_n=2)
+        leaders = identify_feature_leaders(data, top_n=2)
 
-        assert top_performers[0][0] == "perfect.com"
-        assert top_performers[0][1] == 100.0  # Max score
-        assert top_performers[1][0] == "basic.com"
-        assert top_performers[1][1] == 40.0  # Just base score
+        assert leaders[0]["domain"] == "perfect.com"
+        assert leaders[0]["feature_count"] == 5
+        assert leaders[1]["domain"] == "basic.com"
+        assert leaders[1]["feature_count"] == 0
+
+        # The compatibility API returns feature counts, not compliance percentages.
+        assert identify_top_performers(data, top_n=1) == [("perfect.com", 5.0)]
 
     def test_calculate_error_statistics(self, sample_data):
-        """Test error statistics calculation."""
+        """Normal DNS absence is not reported as a query failure."""
         error_stats = calculate_error_statistics(sample_data)
 
-        assert error_stats["No HTTPS record"] == 1
-        assert error_stats["NXDOMAIN"] == 1
+        assert error_stats == {}
+
+    def test_calculate_error_statistics_retains_operational_failures(self):
+        """Timeouts and unexpected query errors remain visible."""
+        data = pd.DataFrame(
+            [
+                {"query_status": "timeout", "query_error": "Timeout"},
+                {"query_status": "error", "query_error": "SERVFAIL"},
+            ]
+        )
+
+        assert calculate_error_statistics(data) == {"SERVFAIL": 1, "Timeout": 1}
 
     def test_calculate_error_statistics_no_errors(self):
         """Test error statistics with no errors."""

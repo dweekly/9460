@@ -1,639 +1,232 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RFC 9460 (HTTPS DNS Records) Adoption Report</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
-    <link rel="stylesheet" href="assets/css/style.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Longitudinal measurements of HTTPS and SVCB DNS record adoption and RFC 9460 validity.">
+    <title>RFC 9460 Adoption &amp; Validity Tracker</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="assets/css/style.css" rel="stylesheet">
+    <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script defer src="assets/js/charts.js"></script>
+    <script defer src="assets/js/main.js"></script>
 </head>
-<body>
-    <!-- Navigation -->
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary sticky-top">
+<body data-data-root="data">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary sticky-top" aria-label="Primary navigation">
         <div class="container">
-            <a class="navbar-brand" href="#">
-                <i class="bi bi-shield-lock"></i> RFC 9460 Adoption Tracker
-            </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <a class="navbar-brand" href="#top"><i class="bi bi-radar me-2"></i>RFC 9460 Tracker</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
-                    <li class="nav-item">
-                        <a class="nav-link" href="#overview">Overview</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#adoption">Adoption</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#features">Features</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#leaders">Leaders</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#technical">Technical</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="https://github.com/yourusername/rfc9460-check" target="_blank">
-                            <i class="bi bi-github"></i> GitHub
-                        </a>
-                    </li>
+                    <li class="nav-item"><a class="nav-link" href="#adoption">Adoption</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#validity">Validity</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#changes">Changes</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#observations">Domains</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#methodology">Methodology</a></li>
+                    <li class="nav-item"><a class="nav-link" href="https://github.com/dweekly/9460" target="_blank" rel="noopener"><i class="bi bi-github me-1"></i>GitHub</a></li>
                 </ul>
             </div>
         </div>
     </nav>
 
-    <!-- Hero Section -->
-    <section class="hero-section text-white py-5">
-        <div class="container">
-            <div class="row align-items-center">
-                <div class="col-lg-6">
-                    <h1 class="display-4 fw-bold mb-4">RFC 9460 Adoption Analysis</h1>
-                    <p class="lead mb-4">
-                        Tracking the deployment of HTTPS and SVCB DNS Resource Records across the top 100 websites
-                    </p>
-                    <div class="d-flex gap-3 mb-4">
-                        <a href="#adoption" class="btn btn-light btn-lg">View Analysis</a>
-                        <a href="https://datatracker.ietf.org/doc/rfc9460/" target="_blank" class="btn btn-outline-light btn-lg">
-                            Read RFC 9460 <i class="bi bi-arrow-up-right"></i>
-                        </a>
+    <main id="top">
+        <section class="hero-section text-white py-5">
+            <div class="container py-lg-3">
+                <div id="dataStatus" class="alert alert-light d-none" role="status"></div>
+                <div class="row align-items-center g-5">
+                    <div class="col-lg-6">
+                        <span class="eyebrow">Daily DNS measurement</span>
+                        <h1 class="display-4 fw-bold mb-3">Adoption is not compliance</h1>
+                        <p class="lead mb-4">Tracking HTTPS records across a fixed web cohort, whether observed records are valid and usable, and which optional connection features they advertise. Generic SVCB is measured only for explicitly mapped services.</p>
+                        <div class="d-flex flex-wrap gap-3 mb-4">
+                            <a href="#adoption" class="btn btn-light btn-lg">Explore the data</a>
+                            <a href="https://www.rfc-editor.org/rfc/rfc9460.html" target="_blank" rel="noopener" class="btn btn-outline-light btn-lg">Read RFC 9460 <i class="bi bi-arrow-up-right"></i></a>
+                        </div>
+                        <p class="scan-info mb-0"><i class="bi bi-clock me-1"></i>Latest observation: <span id="scanDate">Loading…</span></p>
                     </div>
-                    <div class="scan-info">
-                        <small class="text-light opacity-75">
-                            <i class="bi bi-clock"></i> Last scan: September 15, 2025 at 11:30 AM
-                        </small>
-                    </div>
-                </div>
-                <div class="col-lg-6">
-                    <div class="stats-grid">
-                        <div class="stat-card">
-                            <div class="stat-value">9%</div>
-                            <div class="stat-label">Overall Adoption</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-value">18</div>
-                            <div class="stat-label">Compliant Domains</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-value">72%</div>
-                            <div class="stat-label">HTTP/3 Support</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-value">100</div>
-                            <div class="stat-label">Domains Tested</div>
+                    <div class="col-lg-6">
+                        <div class="stats-grid" aria-label="Latest scan summary">
+                            <div class="stat-card"><div id="httpsAdoptionValue" class="stat-value">—</div><div class="stat-label">HTTPS names observed</div><div id="httpsAdoptionDetail" class="stat-detail">Loading</div></div>
+                            <div class="stat-card"><div id="validRecordsValue" class="stat-value">—</div><div class="stat-label">Valid RRsets</div><div id="validRecordsDetail" class="stat-detail">Loading</div></div>
+                            <div class="stat-card"><div id="http3Value" class="stat-value">—</div><div class="stat-label">H3 ALPN advertised</div><div id="http3Detail" class="stat-detail">Loading</div></div>
+                            <div class="stat-card"><div id="domainCountValue" class="stat-value">—</div><div class="stat-label">Cohort domains</div><div id="queryCountDetail" class="stat-detail">Loading</div></div>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
-    </section>
+        </section>
 
-    <!-- Overview Section -->
-    <section id="overview" class="py-5">
-        <div class="container">
-            <div class="row">
-                <div class="col-lg-8 mx-auto">
-                    <h2 class="h1 mb-4">What is RFC 9460?</h2>
-                    <div class="card shadow-sm mb-4">
-                        <div class="card-body">
-                            <p class="lead">
-                                RFC 9460 defines the HTTPS and SVCB (Service Binding) DNS resource record types,
-                                enabling improved connection establishment and enhanced privacy for HTTPS connections.
-                            </p>
-                            <h4 class="mt-4 mb-3">Key Benefits</h4>
-                            <div class="row g-3">
-                                <div class="col-md-6">
-                                    <div class="feature-item">
-                                        <i class="bi bi-speedometer2 text-primary fs-3"></i>
-                                        <h5>Faster Connections</h5>
-                                        <p>Enables HTTP/3 and QUIC discovery without additional round trips</p>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="feature-item">
-                                        <i class="bi bi-shield-check text-primary fs-3"></i>
-                                        <h5>Enhanced Privacy</h5>
-                                        <p>Supports Encrypted Client Hello (ECH) for improved TLS privacy</p>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="feature-item">
-                                        <i class="bi bi-arrow-repeat text-primary fs-3"></i>
-                                        <h5>Protocol Negotiation</h5>
-                                        <p>Advertises supported protocols (HTTP/2, HTTP/3) via DNS</p>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="feature-item">
-                                        <i class="bi bi-globe text-primary fs-3"></i>
-                                        <h5>IP Address Hints</h5>
-                                        <p>Provides IPv4 and IPv6 hints for faster resolution</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+        <section class="py-5" aria-labelledby="what-heading">
+            <div class="container">
+                <div class="row g-4 align-items-center">
+                    <div class="col-lg-7">
+                        <span class="section-kicker">What this measures</span>
+                        <h2 id="what-heading" class="display-6 fw-bold">Service discovery signals in DNS</h2>
+                        <p class="lead text-secondary">RFC 9460 defines SVCB and HTTPS resource records. Sites can use them to advertise endpoints, ALPN identifiers such as <code>h3</code>, address hints, ports, and ECH configuration.</p>
+                        <p class="mb-0">Publishing either record is optional. A site without one is not “non-compliant,” and a DNS advertisement does not prove that a client can complete the advertised TLS or HTTP behavior.</p>
                     </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Adoption Metrics Section -->
-    <section id="adoption" class="py-5 bg-light">
-        <div class="container">
-            <h2 class="h1 mb-4">Adoption Metrics</h2>
-
-            <div class="row mb-4">
-                <div class="col-lg-6">
-                    <div class="card h-100 shadow-sm">
-                        <div class="card-body">
-                            <h4 class="card-title">Overall Adoption Rate</h4>
-                            <canvas id="adoptionChart"></canvas>
-                            <div class="mt-3">
-                                <p class="mb-2"><strong>Key Findings:</strong></p>
-                                <ul class="small">
-                                    <li>Root domains: 8% adoption (8 out of 100)</li>
-                                    <li>WWW subdomains: 10% adoption (10 out of 100)</li>
-                                    <li>Combined unique domains: 9% adoption</li>
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="col-lg-6">
-                    <div class="card h-100 shadow-sm">
-                        <div class="card-body">
-                            <h4 class="card-title">Feature Distribution</h4>
-                            <canvas id="featuresChart"></canvas>
-                            <div class="mt-3">
-                                <p class="mb-2"><strong>Among HTTPS-enabled domains:</strong></p>
-                                <ul class="small">
-                                    <li>72% support HTTP/3 via ALPN</li>
-                                    <li>56% provide IPv4 address hints</li>
-                                    <li>33% provide IPv6 address hints</li>
-                                    <li>100% use standard port (443)</li>
-                                    <li>0% have ECH configuration</li>
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="row">
-                <div class="col-lg-6">
-                    <div class="card shadow-sm h-100">
-                        <div class="card-body">
-                            <h4 class="card-title">SVCB vs HTTPS Record Usage</h4>
-                            <div class="alert alert-warning mb-3">
-                                <h6><i class="bi bi-exclamation-triangle"></i> Key Finding</h6>
-                                <p class="mb-0">
-                                    <strong>0% SVCB adoption</strong> - None of the top 100 websites have deployed SVCB records.
-                                    All RFC 9460 implementations exclusively use HTTPS (Type 65) records.
-                                </p>
-                            </div>
-                            <ul class="small">
-                                <li><strong>HTTPS Records:</strong> 18 domains (9% adoption)</li>
-                                <li><strong>SVCB Records:</strong> 0 domains (0% adoption)</li>
-                                <li><strong>Both Types:</strong> 0 domains</li>
+                    <div class="col-lg-5">
+                        <div class="measurement-note p-4">
+                            <i class="bi bi-info-circle fs-3 text-primary"></i>
+                            <h3 class="h5 mt-3">Three separate questions</h3>
+                            <ul class="mb-0">
+                                <li>Was a record observed?</li>
+                                <li>Is its syntax and parameter combination valid?</li>
+                                <li>Which optional features does it advertise?</li>
                             </ul>
-                            <p class="text-muted small">
-                                SVCB records are for general service binding, while HTTPS records are specifically for HTTP services.
-                                The exclusive use of HTTPS records makes sense for web services.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-lg-6">
-                    <div class="card shadow-sm h-100">
-                        <div class="card-body">
-                            <h4 class="card-title">Port Configuration Analysis</h4>
-                            <div class="alert alert-info mb-3">
-                                <h6><i class="bi bi-info-circle"></i> Standard Port Usage</h6>
-                                <p class="mb-0">
-                                    All 18 domains with HTTPS records use <strong>standard HTTPS port (443)</strong>.
-                                    No custom port configurations were detected.
-                                </p>
-                            </div>
-                            <ul class="small">
-                                <li><strong>Standard Port (443):</strong> 100% of HTTPS records</li>
-                                <li><strong>Custom Ports:</strong> 0 domains</li>
-                                <li><strong>Port Hints in Records:</strong> Not specified (defaults to 443)</li>
-                            </ul>
-                            <p class="text-muted small">
-                                The universal use of standard ports indicates conservative deployment strategies
-                                among early adopters.
-                            </p>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
-    </section>
+        </section>
 
-    <!-- Industry Leaders Section -->
-    <section id="leaders" class="py-5">
-        <div class="container">
-            <h2 class="h1 mb-4">Industry Leaders</h2>
-            <p class="lead mb-4">Organizations leading RFC 9460 adoption with the highest compliance scores</p>
-
-            <div class="row">
-                <div class="col-lg-12">
-                    <div class="card shadow-sm">
-                        <div class="card-body">
-                            <div class="table-responsive">
-                                <table class="table table-hover">
-                                    <thead>
-                                        <tr>
-                                            <th>Rank</th>
-                                            <th>Domain</th>
-                                            <th>Compliance Score</th>
-                                            <th>Features</th>
-                                            <th>Details</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr class="table-success">
-                                            <td><span class="badge bg-warning text-dark">1</span></td>
-                                            <td><strong>discord.com</strong></td>
-                                            <td>
-                                                <div class="progress" style="height: 25px;">
-                                                    <div class="progress-bar bg-success" style="width: 85%">85/100</div>
-                                                </div>
-                                            </td>
-                                            <td>
-                                                <span class="badge bg-primary">HTTPS RR</span>
-                                                <span class="badge bg-info">HTTP/3</span>
-                                                <span class="badge bg-secondary">IPv4</span>
-                                                <span class="badge bg-secondary">IPv6</span>
-                                            </td>
-                                            <td><button class="btn btn-sm btn-outline-primary" onclick="showDetails('discord.com')">View</button></td>
-                                        </tr>
-                                        <tr class="table-success">
-                                            <td><span class="badge bg-warning text-dark">1</span></td>
-                                            <td><strong>cloudflare.com</strong></td>
-                                            <td>
-                                                <div class="progress" style="height: 25px;">
-                                                    <div class="progress-bar bg-success" style="width: 85%">85/100</div>
-                                                </div>
-                                            </td>
-                                            <td>
-                                                <span class="badge bg-primary">HTTPS RR</span>
-                                                <span class="badge bg-info">HTTP/3</span>
-                                                <span class="badge bg-secondary">IPv4</span>
-                                                <span class="badge bg-secondary">IPv6</span>
-                                            </td>
-                                            <td><button class="btn btn-sm btn-outline-primary" onclick="showDetails('cloudflare.com')">View</button></td>
-                                        </tr>
-                                        <tr class="table-success">
-                                            <td><span class="badge bg-warning text-dark">1</span></td>
-                                            <td><strong>doordash.com</strong></td>
-                                            <td>
-                                                <div class="progress" style="height: 25px;">
-                                                    <div class="progress-bar bg-success" style="width: 85%">85/100</div>
-                                                </div>
-                                            </td>
-                                            <td>
-                                                <span class="badge bg-primary">HTTPS RR</span>
-                                                <span class="badge bg-info">HTTP/3</span>
-                                                <span class="badge bg-secondary">IPv4</span>
-                                            </td>
-                                            <td><button class="btn btn-sm btn-outline-primary" onclick="showDetails('doordash.com')">View</button></td>
-                                        </tr>
-                                        <tr>
-                                            <td><span class="badge bg-silver">4</span></td>
-                                            <td><strong>google.com</strong></td>
-                                            <td>
-                                                <div class="progress" style="height: 25px;">
-                                                    <div class="progress-bar bg-warning" style="width: 70%">70/100</div>
-                                                </div>
-                                            </td>
-                                            <td>
-                                                <span class="badge bg-primary">HTTPS RR</span>
-                                                <span class="badge bg-info">HTTP/3</span>
-                                            </td>
-                                            <td><button class="btn btn-sm btn-outline-primary" onclick="showDetails('google.com')">View</button></td>
-                                        </tr>
-                                        <tr>
-                                            <td><span class="badge bg-silver">4</span></td>
-                                            <td><strong>facebook.com</strong></td>
-                                            <td>
-                                                <div class="progress" style="height: 25px;">
-                                                    <div class="progress-bar bg-warning" style="width: 70%">70/100</div>
-                                                </div>
-                                            </td>
-                                            <td>
-                                                <span class="badge bg-primary">HTTPS RR</span>
-                                                <span class="badge bg-info">HTTP/3</span>
-                                            </td>
-                                            <td><button class="btn btn-sm btn-outline-primary" onclick="showDetails('facebook.com')">View</button></td>
-                                        </tr>
-                                        <tr>
-                                            <td><span class="badge bg-silver">4</span></td>
-                                            <td><strong>instagram.com</strong></td>
-                                            <td>
-                                                <div class="progress" style="height: 25px;">
-                                                    <div class="progress-bar bg-warning" style="width: 70%">70/100</div>
-                                                </div>
-                                            </td>
-                                            <td>
-                                                <span class="badge bg-primary">HTTPS RR</span>
-                                                <span class="badge bg-info">HTTP/3</span>
-                                            </td>
-                                            <td><button class="btn btn-sm btn-outline-primary" onclick="showDetails('instagram.com')">View</button></td>
-                                        </tr>
-                                        <tr>
-                                            <td>7</td>
-                                            <td><strong>stackoverflow.com</strong></td>
-                                            <td>
-                                                <div class="progress" style="height: 25px;">
-                                                    <div class="progress-bar bg-warning" style="width: 65%">65/100</div>
-                                                </div>
-                                            </td>
-                                            <td>
-                                                <span class="badge bg-primary">HTTPS RR</span>
-                                                <span class="badge bg-secondary">IPv4</span>
-                                                <span class="badge bg-secondary">IPv6</span>
-                                            </td>
-                                            <td><button class="btn btn-sm btn-outline-primary" onclick="showDetails('stackoverflow.com')">View</button></td>
-                                        </tr>
-                                        <tr>
-                                            <td>8</td>
-                                            <td><strong>linkedin.com</strong></td>
-                                            <td>
-                                                <div class="progress" style="height: 25px;">
-                                                    <div class="progress-bar bg-info" style="width: 42.5%">42.5/100</div>
-                                                </div>
-                                            </td>
-                                            <td>
-                                                <span class="badge bg-primary">HTTPS RR</span>
-                                            </td>
-                                            <td><button class="btn btn-sm btn-outline-primary" onclick="showDetails('linkedin.com')">View</button></td>
-                                        </tr>
-                                        <tr>
-                                            <td>9</td>
-                                            <td><strong>youtube.com</strong></td>
-                                            <td>
-                                                <div class="progress" style="height: 25px;">
-                                                    <div class="progress-bar bg-info" style="width: 40%">40/100</div>
-                                                </div>
-                                            </td>
-                                            <td>
-                                                <span class="badge bg-primary">HTTPS RR</span>
-                                            </td>
-                                            <td><button class="btn btn-sm btn-outline-primary" onclick="showDetails('youtube.com')">View</button></td>
-                                        </tr>
-                                        <tr>
-                                            <td>10</td>
-                                            <td><strong>theverge.com</strong></td>
-                                            <td>
-                                                <div class="progress" style="height: 25px;">
-                                                    <div class="progress-bar bg-info" style="width: 32.5%">32.5/100</div>
-                                                </div>
-                                            </td>
-                                            <td>
-                                                <span class="badge bg-primary">HTTPS RR</span>
-                                            </td>
-                                            <td><button class="btn btn-sm btn-outline-primary" onclick="showDetails('theverge.com')">View</button></td>
-                                        </tr>
-                                    </tbody>
-                                </table>
+        <section id="adoption" class="py-5 bg-light" aria-labelledby="adoption-heading">
+            <div class="container">
+                <span class="section-kicker">Current snapshot</span>
+                <h2 id="adoption-heading" class="display-6 fw-bold mb-4">Record adoption and features</h2>
+                <div class="row g-4">
+                    <div class="col-lg-5">
+                        <div class="card dashboard-card h-100">
+                            <div class="card-body p-4">
+                                <h3 class="h5">HTTPS records by queried name</h3>
+                                <p class="text-secondary small">The denominator is queried HTTPS names. Legacy SVCB rows never dilute this metric.</p>
+                                <div class="chart-wrap"><canvas id="adoptionChart" aria-label="HTTPS record adoption chart"></canvas></div>
+                                <dl class="metric-list mt-3 mb-0">
+                                    <div><dt>Apex names</dt><dd id="rootAdoption">—</dd></div>
+                                    <div><dt><code>www</code> names</dt><dd id="wwwAdoption">—</dd></div>
+                                    <div><dt>Generic SVCB</dt><dd id="svcbAdoption">Not measured for this web cohort</dd></div>
+                                </dl>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-7">
+                        <div class="card dashboard-card h-100">
+                            <div class="card-body p-4">
+                                <h3 class="h5">Optional features in usable service records</h3>
+                                <p class="text-secondary small">Counts and percentages use the feature-specific denominator reported by the dataset.</p>
+                                <div class="chart-wrap chart-wrap-wide"><canvas id="featuresChart" aria-label="Advertised feature chart"></canvas></div>
+                                <div id="featureSummary" class="feature-summary mt-3" aria-live="polite"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <div class="card dashboard-card">
+                            <div class="card-body p-4">
+                                <h3 class="h5">Adoption over time</h3>
+                                <p class="text-secondary small">Legacy aggregate points are retained but marked separately from detailed schema-v2 scans.</p>
+                                <div class="chart-wrap chart-wrap-history"><canvas id="historyChart" aria-label="Adoption history chart"></canvas></div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
+        </section>
 
-            <div class="row mt-4">
-                <div class="col-lg-12">
-                    <div class="alert alert-info">
-                        <h5><i class="bi bi-info-circle"></i> Notable Observations</h5>
-                        <ul class="mb-0">
-                            <li>CDN providers (Cloudflare) are leading adoption with comprehensive feature support</li>
-                            <li>Major tech platforms (Google, Facebook, Discord) have partial implementation</li>
-                            <li>HTTP/3 support is the most commonly implemented feature (72% of HTTPS-enabled domains)</li>
-                            <li>ECH (Encrypted Client Hello) has not been deployed by any tested domain yet</li>
+        <section id="validity" class="py-5" aria-labelledby="validity-heading">
+            <div class="container">
+                <span class="section-kicker">RFC interpretation</span>
+                <h2 id="validity-heading" class="display-6 fw-bold mb-4">Validity and client usability</h2>
+                <div class="row g-4">
+                    <div class="col-lg-7">
+                        <div class="card dashboard-card h-100"><div class="card-body p-4"><div class="chart-wrap chart-wrap-wide"><canvas id="validityChart" aria-label="Record validity chart"></canvas></div></div></div>
+                    </div>
+                    <div class="col-lg-5">
+                        <div class="card dashboard-card h-100">
+                            <div class="card-body p-4">
+                                <h3 class="h5">Classification</h3>
+                                <dl id="validitySummary" class="metric-list mb-3"></dl>
+                                <p class="small text-secondary mb-0"><strong>Valid but incompatible</strong> means the RRset can be valid while requiring a mandatory parameter that this scanner/client does not implement. Absence and DNS query failures are reported separately from RFC validity.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="changes" class="py-5 bg-light" aria-labelledby="changes-heading">
+            <div class="container">
+                <span class="section-kicker">Since the previous detailed scan</span>
+                <h2 id="changes-heading" class="display-6 fw-bold mb-3">Recent changes</h2>
+                <p id="changeContext" class="text-secondary">Loading comparison data…</p>
+                <div class="card dashboard-card">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead><tr><th>Change</th><th>Name</th><th>Type</th><th>Summary</th></tr></thead>
+                            <tbody id="changesTable"><tr><td colspan="4" class="empty-state">Loading…</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="observations" class="py-5" aria-labelledby="observations-heading">
+            <div class="container">
+                <span class="section-kicker">Inspect the evidence</span>
+                <h2 id="observations-heading" class="display-6 fw-bold mb-3">Domain observations</h2>
+                <p class="text-secondary">Each row comes from the current snapshot. Open a row to inspect the complete retained RRset, raw presentation text, resolver provenance, and validation findings.</p>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-8"><label class="visually-hidden" for="domainSearch">Search domains</label><input id="domainSearch" class="form-control" type="search" placeholder="Search domain, hostname, resolver, or record type"></div>
+                    <div class="col-md-4"><label class="visually-hidden" for="statusFilter">Filter status</label><select id="statusFilter" class="form-select"><option value="all">All observations</option><option value="present">Records present</option><option value="absent">Records absent</option><option value="invalid">Invalid records</option><option value="incompatible">Valid but incompatible</option><option value="error">Query errors</option></select></div>
+                </div>
+                <p id="observationCount" class="small text-secondary" aria-live="polite"></p>
+                <div class="card dashboard-card">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead><tr><th>Domain / queried name</th><th>Record</th><th>Resolver</th><th>Observation</th><th>Features</th><th><span class="visually-hidden">Details</span></th></tr></thead>
+                            <tbody id="observationsTable"><tr><td colspan="6" class="empty-state">Loading…</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="methodology" class="py-5 bg-light" aria-labelledby="methodology-heading">
+            <div class="container">
+                <div class="row g-5">
+                    <div class="col-lg-7">
+                        <span class="section-kicker">How to read these results</span>
+                        <h2 id="methodology-heading" class="display-6 fw-bold">Measurement boundaries</h2>
+                        <ul class="method-list">
+                            <li><strong>Adoption:</strong> whether the configured resolver returned an HTTPS RRset for an apex or <code>www</code> cohort name; SVCB is queried only with an explicit service mapping.</li>
+                            <li><strong>Validity:</strong> structural and semantic checks over the complete observed RRset, including AliasMode, ServiceMode, mandatory parameters, ALPN rules, and alias loops.</li>
+                            <li><strong>Feature advertising:</strong> parameters in usable ServiceMode records. It is evidence of DNS configuration, not proof that the endpoint behavior succeeds.</li>
+                            <li><strong>Historical continuity:</strong> older reports provide aggregate trends only. Detailed per-name comparisons begin with schema v2.</li>
                         </ul>
+                        <a href="https://github.com/dweekly/9460/blob/main/README.md#methodology" class="btn btn-outline-primary" target="_blank" rel="noopener">Full methodology</a>
                     </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Technical Details Section -->
-    <section id="technical" class="py-5 bg-light">
-        <div class="container">
-            <h2 class="h1 mb-4">Technical Implementation Details</h2>
-
-            <div class="row">
-                <div class="col-lg-6">
-                    <div class="card shadow-sm mb-4">
-                        <div class="card-body">
-                            <h4 class="card-title">ALPN Protocol Distribution</h4>
-                            <canvas id="alpnChart"></canvas>
-                            <p class="text-muted small mt-3">
-                                Application-Layer Protocol Negotiation (ALPN) values found in HTTPS records
-                            </p>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="col-lg-6">
-                    <div class="card shadow-sm mb-4">
-                        <div class="card-body">
-                            <h4 class="card-title">Priority Values</h4>
-                            <canvas id="priorityChart"></canvas>
-                            <p class="text-muted small mt-3">
-                                All implementations use priority 1 (highest) for their HTTPS records
-                            </p>
+                    <div class="col-lg-5">
+                        <div class="future-card p-4">
+                            <span class="badge text-bg-primary mb-3">Roadmap</span>
+                            <h3 class="h4">TLS and HTTP signals through 2028</h3>
+                            <p>The next measurement layer will use separate, versioned active probes for ECH behavior, hybrid ML-KEM TLS key agreement, and evolving TLS and HTTP response signals.</p>
+                            <p class="small mb-0"><strong>Important:</strong> DNS alone cannot prove ECH use, TLS negotiation, post-quantum cryptography, or HTTP header behavior. Those observations will remain distinct from RFC 9460 DNS results.</p>
                         </div>
                     </div>
                 </div>
             </div>
+        </section>
+    </main>
 
-            <div class="row">
-                <div class="col-lg-12">
-                    <div class="card shadow-sm">
-                        <div class="card-body">
-                            <h4 class="card-title mb-3">DNS Query Examples</h4>
-                            <ul class="nav nav-tabs" id="dnsTab" role="tablist">
-                                <li class="nav-item" role="presentation">
-                                    <button class="nav-link active" id="query-tab" data-bs-toggle="tab" data-bs-target="#query" type="button">Query</button>
-                                </li>
-                                <li class="nav-item" role="presentation">
-                                    <button class="nav-link" id="response-tab" data-bs-toggle="tab" data-bs-target="#response" type="button">Response</button>
-                                </li>
-                                <li class="nav-item" role="presentation">
-                                    <button class="nav-link" id="parsed-tab" data-bs-toggle="tab" data-bs-target="#parsed" type="button">Parsed Data</button>
-                                </li>
-                            </ul>
-                            <div class="tab-content mt-3" id="dnsTabContent">
-                                <div class="tab-pane fade show active" id="query" role="tabpanel">
-                                    <pre class="bg-dark text-light p-3 rounded"><code>$ dig +short cloudflare.com TYPE65
-1 . alpn=h3,h2 ipv4hint=104.16.132.229,104.16.133.229 ipv6hint=2606:4700::6810:84e5,2606:4700::6810:85e5</code></pre>
-                                </div>
-                                <div class="tab-pane fade" id="response" role="tabpanel">
-                                    <pre class="bg-dark text-light p-3 rounded"><code>;; ANSWER SECTION:
-cloudflare.com.    300    IN    TYPE65    \# 67 00010000010003026833026832000400081A0
-                                           68104E51A068105E5000600202606470000000
-                                           000000006810084E526064700000000000000
-                                           006810085E5</code></pre>
-                                </div>
-                                <div class="tab-pane fade" id="parsed" role="tabpanel">
-                                    <pre class="bg-dark text-light p-3 rounded"><code>{
-  "priority": 1,
-  "target": ".",
-  "params": {
-    "alpn": ["h3", "h2"],
-    "ipv4hint": ["104.16.132.229", "104.16.133.229"],
-    "ipv6hint": ["2606:4700::6810:84e5", "2606:4700::6810:85e5"]
-  }
-}</code></pre>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Features Section -->
-    <section id="features" class="py-5">
-        <div class="container">
-            <h2 class="h1 mb-4">RFC 9460 Features Analysis</h2>
-
-            <div class="row g-4">
-                <div class="col-md-6 col-lg-3">
-                    <div class="feature-card text-center">
-                        <div class="feature-icon bg-primary text-white">
-                            <i class="bi bi-lightning-charge"></i>
-                        </div>
-                        <h5 class="mt-3">HTTP/3 Support</h5>
-                        <div class="display-4 text-primary">72%</div>
-                        <p class="text-muted">of HTTPS-enabled domains advertise HTTP/3 via ALPN</p>
-                    </div>
-                </div>
-
-                <div class="col-md-6 col-lg-3">
-                    <div class="feature-card text-center">
-                        <div class="feature-icon bg-info text-white">
-                            <i class="bi bi-hdd-network"></i>
-                        </div>
-                        <h5 class="mt-3">IPv4 Hints</h5>
-                        <div class="display-4 text-info">56%</div>
-                        <p class="text-muted">provide IPv4 address hints for faster resolution</p>
-                    </div>
-                </div>
-
-                <div class="col-md-6 col-lg-3">
-                    <div class="feature-card text-center">
-                        <div class="feature-icon bg-success text-white">
-                            <i class="bi bi-globe2"></i>
-                        </div>
-                        <h5 class="mt-3">IPv6 Hints</h5>
-                        <div class="display-4 text-success">33%</div>
-                        <p class="text-muted">include IPv6 address hints for dual-stack support</p>
-                    </div>
-                </div>
-
-                <div class="col-md-6 col-lg-3">
-                    <div class="feature-card text-center">
-                        <div class="feature-icon bg-secondary text-white">
-                            <i class="bi bi-lock"></i>
-                        </div>
-                        <h5 class="mt-3">ECH Config</h5>
-                        <div class="display-4 text-secondary">0%</div>
-                        <p class="text-muted">currently deploying Encrypted Client Hello</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Methodology Section -->
-    <section class="py-5 bg-light">
-        <div class="container">
-            <div class="row">
-                <div class="col-lg-8 mx-auto">
-                    <h2 class="h1 mb-4">Methodology</h2>
-                    <div class="card shadow-sm">
-                        <div class="card-body">
-                            <h5>Data Collection</h5>
-                            <ul>
-                                <li>Analyzed top 100 websites from global traffic rankings</li>
-                                <li>Queried both root domain and www subdomain for each site</li>
-                                <li>Checked for both HTTPS (Type 65) and SVCB (Type 64) DNS records</li>
-                                <li>Used public DNS resolvers (8.8.8.8, 1.1.1.1) for queries</li>
-                                <li>Total of 400 DNS queries (100 domains × 2 subdomains × 2 record types)</li>
-                            </ul>
-
-                            <h5 class="mt-4">Scoring System</h5>
-                            <ul>
-                                <li><strong>Base Score (40 points):</strong> Presence of HTTPS record</li>
-                                <li><strong>HTTP/3 Support (30 points):</strong> ALPN includes h3 protocol</li>
-                                <li><strong>IP Hints (15 points):</strong> IPv4 or IPv6 address hints</li>
-                                <li><strong>ECH Support (15 points):</strong> Encrypted Client Hello configuration</li>
-                            </ul>
-
-                            <h5 class="mt-4">Tools Used</h5>
-                            <p>
-                                Analysis performed using custom Python tooling with dnspython library.
-                                Source code available on <a href="https://github.com/yourusername/rfc9460-check" target="_blank">GitHub</a>.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Footer -->
-    <footer class="bg-dark text-white py-4">
-        <div class="container">
-            <div class="row">
-                <div class="col-md-6">
-                    <p class="mb-0">RFC 9460 Adoption Tracker</p>
-                    <small class="text-muted">Monitoring HTTPS DNS Resource Record deployment</small>
-                </div>
-                <div class="col-md-6 text-md-end">
-                    <a href="https://github.com/yourusername/rfc9460-check" class="text-white me-3">
-                        <i class="bi bi-github"></i> GitHub
-                    </a>
-                    <a href="https://datatracker.ietf.org/doc/rfc9460/" class="text-white">
-                        <i class="bi bi-file-text"></i> RFC 9460
-                    </a>
-                </div>
-            </div>
-            <hr class="my-3 opacity-25">
-            <div class="text-center">
-                <small>Last updated: September 15, 2025 | Data refreshed weekly</small>
-            </div>
+    <footer class="bg-dark text-light py-4">
+        <div class="container d-flex flex-column flex-md-row justify-content-between gap-2">
+            <span>RFC 9460 Adoption &amp; Validity Tracker</span>
+            <span class="text-white-50">Dataset generated from scan <span id="footerScanDate">—</span> · <a class="link-light" href="https://github.com/dweekly/9460">Source and data</a></span>
         </div>
     </footer>
 
-    <!-- Detail Modal -->
-    <div class="modal fade" id="detailModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
+    <div class="modal fade" id="detailModal" tabindex="-1" aria-labelledby="modalTitle" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
             <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="modalTitle">Domain Details</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body" id="modalBody">
-                    <!-- Content loaded dynamically -->
-                </div>
+                <div class="modal-header"><h2 class="modal-title fs-5" id="modalTitle">Observation details</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+                <div class="modal-body" id="modalBody"></div>
             </div>
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="assets/js/charts.js"></script>
-    <script src="assets/js/main.js"></script>
+    <noscript><div class="container py-5"><div class="alert alert-warning">This dashboard needs JavaScript to load the generated dataset. The JSON files remain available under <code>docs/data/</code>.</div></div></noscript>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
