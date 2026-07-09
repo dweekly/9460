@@ -7,6 +7,17 @@ const vm = require("node:vm");
 
 const root = path.resolve(__dirname, "..");
 const dashboardScript = fs.readFileSync(path.join(root, "docs/assets/js/main.js"), "utf8");
+const currentLatest = JSON.parse(
+    fs.readFileSync(path.join(root, "docs/data/latest.json"), "utf8"),
+);
+
+function formatNumber(value) {
+    return new Intl.NumberFormat("en-US").format(value);
+}
+
+function formatPercent(value) {
+    return `${value.toFixed(value >= 10 ? 1 : 2).replace(/\.?0+$/, "")}%`;
+}
 
 class ElementStub {
     constructor(id) {
@@ -58,16 +69,30 @@ async function render(fetchOverride) {
 
 async function testCurrentData() {
     const elements = await render();
-    assert.equal(elements.get("httpsAdoptionValue").textContent, "13.9%");
-    assert.equal(elements.get("httpsAdoptionDetail").textContent, "28 of 202 (13.9%)");
-    assert.equal(elements.get("http3Value").textContent, "60.7%");
+    const https = currentLatest.metrics.adoption.https;
+    const h3 = currentLatest.metrics.features.h3_advertised;
+    const observationCount = currentLatest.observations.length;
+    const absentCount = currentLatest.observations.filter((observation) =>
+        !observation.present
+        && !observation.error
+        && !["error", "timeout"].includes(observation.status)
+    ).length;
+    assert.equal(
+        elements.get("httpsAdoptionValue").textContent,
+        formatPercent(https.percentage),
+    );
+    assert.equal(
+        elements.get("httpsAdoptionDetail").textContent,
+        `${formatNumber(https.count)} of ${formatNumber(https.denominator)} (${formatPercent(https.percentage)})`,
+    );
+    assert.equal(elements.get("http3Value").textContent, formatPercent(h3.percentage));
     assert.equal(
         elements.get("svcbAdoption").textContent,
         "Not measured for this web cohort",
     );
     assert.equal(
         elements.get("observationCount").textContent,
-        "Showing 202 of 202 observations",
+        `Showing ${formatNumber(observationCount)} of ${formatNumber(observationCount)} observations`,
     );
 
     const table = elements.get("observationsTable").innerHTML;
@@ -81,16 +106,19 @@ async function testCurrentData() {
     filter.listeners.get("change")();
     assert.equal(
         elements.get("observationCount").textContent,
-        "Showing 174 of 202 observations",
+        `Showing ${formatNumber(absentCount)} of ${formatNumber(observationCount)} observations`,
     );
 
     filter.value = "all";
     const search = elements.get("domainSearch");
     search.value = "google.com";
     search.listeners.get("input")();
+    const googleCount = currentLatest.observations.filter(
+        (observation) => observation.domain === "google.com",
+    ).length;
     assert.equal(
         elements.get("observationCount").textContent,
-        "Showing 2 of 202 observations",
+        `Showing ${formatNumber(googleCount)} of ${formatNumber(observationCount)} observations`,
     );
 }
 
@@ -114,7 +142,10 @@ async function testPartialHistoryFailure() {
         if (relativePath.endsWith("changes.json")) return { ok: false, status: 404 };
         return jsonResponse(relativePath);
     });
-    assert.equal(elements.get("httpsAdoptionValue").textContent, "13.9%");
+    assert.equal(
+        elements.get("httpsAdoptionValue").textContent,
+        formatPercent(currentLatest.metrics.adoption.https.percentage),
+    );
     assert.equal(elements.get("dataStatus").className, "alert alert-warning");
     assert.match(elements.get("changeContext").textContent, /change data is unavailable/);
 }

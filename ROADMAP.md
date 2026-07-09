@@ -19,11 +19,10 @@ Publishing an HTTPS or SVCB record is optional, so record absence is not RFC non
 
 ## Now
 
-- [ ] Establish the first successful schema-v2 scheduled scan as the detailed longitudinal baseline and confirm the deployed page reports the same scan identifier.
+- [ ] Add raw DNS wire capture and a strict SVCB decoder before dnspython object normalization so duplicate or misordered SvcParam keys, malformed lengths, and AliasMode parameters can be classified exactly; retain normalized presentation separately.
 
 ## Next
 
-- [ ] Add raw DNS wire capture and a strict SVCB decoder before dnspython object normalization so duplicate or misordered SvcParam keys, malformed lengths, and AliasMode parameters can be classified exactly; retain normalized presentation separately.
 - [ ] Generate the SvcParam decoder registry from a checked-in, dated IANA snapshot and add decoders/validators for newly assigned keys without treating “known” as “supported by the measurement client.”
 - [ ] Design an extensible active-probe framework with versioned DNS, TLS, and HTTP observation schemas; store probe software, capability-registry version, network vantage, and timestamps so results remain interpretable as protocols evolve.
 - [ ] Add ECH behavior verification separately from DNS advertisement: retain the ECHConfigList, record client support and public-name handling, attempt controlled handshakes, and report advertised, attempted, accepted, rejected, and unverifiable states without weakening privacy.
@@ -72,6 +71,8 @@ Publishing an HTTPS or SVCB record is optional, so record absence is not RFC non
 
 ## Completed changes
 
+- 2026-07-09: Established scheduled schema-v2 scan `2026-07-09T23:11:17Z` as the first detailed longitudinal baseline and confirmed the deployed `latest.json` was byte-for-byte identical to the canonical snapshot committed by the workflow.
+- 2026-07-09: Promoted queried names and post-CNAME RRset owners to separate first-class fields so longitudinal identity, changes, and dashboard labels remain anchored to the name that was queried.
 - 2026-07-09: Added the schema-v2 canonical scan with complete parsed RRsets, query/owner identity, resolver and software provenance, post-parser validity findings, explicit denominators, and extensible probe types.
 - 2026-07-09: Added AliasMode/ServiceMode handling, bounded alias traversal, loop outcomes, mandatory and automatic-mandatory checks, current IANA SvcParam metadata, and explicit raw-wire validation limitations.
 - 2026-07-09: Replaced the synthetic compliance score with separate adoption, validity, compatibility, and feature-advertisement metrics; legacy names remain documented compatibility aliases only.
