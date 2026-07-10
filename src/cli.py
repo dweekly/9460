@@ -23,6 +23,7 @@ from .rfc9460_checker.models import (
     SCHEMA_VERSION,
     SVCPARAM_REGISTRY_METADATA,
     VALIDATOR_RULESET_VERSION,
+    WIRE_DECODER_VERSION,
 )
 from .utils import setup_logging
 
@@ -108,6 +109,13 @@ def _failed_observations(domain: str, error: Exception) -> list[dict[str, Any]]:
                 "record_count": 0,
                 "validation_status": "not_applicable",
                 "validation_issues": [],
+                "wire_decoder_version": WIRE_DECODER_VERSION,
+                "wire_capture": {
+                    "format_version": 1,
+                    "responses": [],
+                    "unavailable_reason": "query failed before a DNS response was captured",
+                },
+                "wire_validation": {"status": "not_applicable", "issues": []},
             }
         )
     return observations
@@ -187,6 +195,7 @@ def write_observation_bundle(
                 "dnspython": getattr(dns, "__version__", "unknown"),
             },
             "validator_ruleset_version": VALIDATOR_RULESET_VERSION,
+            "wire_decoder_version": WIRE_DECODER_VERSION,
             "svcparam_registry": dict(SVCPARAM_REGISTRY_METADATA),
         },
         "observations": list(observations),

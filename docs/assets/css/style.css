@@ -88,6 +88,17 @@ section { scroll-margin-top: 68px; }
 .detail-field { padding: .85rem; background: var(--light-bg); border-radius: .65rem; }
 .detail-field span { display: block; color: var(--muted); font-size: .75rem; text-transform: uppercase; }
 .detail-field strong { overflow-wrap: anywhere; }
+.wire-evidence { border: 1px solid var(--line); border-radius: .75rem; overflow: hidden; }
+.wire-evidence > summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .85rem 1rem; background: var(--light-bg); cursor: pointer; font-weight: 700; list-style-position: inside; }
+.wire-evidence > summary::marker { color: var(--primary-color); }
+.wire-summary-badges { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: .35rem; }
+.wire-evidence-body { padding: 1rem; border-top: 1px solid var(--line); }
+.wire-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; margin-bottom: .85rem; }
+.wire-summary-grid > div { min-width: 0; padding: .7rem; background: var(--light-bg); border-radius: .55rem; }
+.wire-summary-grid span { display: block; margin-bottom: .2rem; color: var(--muted); font-size: .7rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.wire-summary-grid strong, .wire-summary-grid code { display: block; overflow-wrap: anywhere; }
+.wire-issue { display: inline-block; margin: .2rem .15rem; padding: .15rem .35rem; color: #842029; background: #f8d7da; border-radius: .3rem; }
+.wire-payload-note { margin-top: .8rem; color: var(--muted); font-size: .75rem; }
 .method-list { padding-left: 1.2rem; }
 .method-list li { margin-bottom: .85rem; }
 
@@ -106,6 +117,7 @@ section { scroll-margin-top: 68px; }
     .stat-card { min-height: 130px; padding: 1rem; }
     .stat-value { font-size: 1.7rem; }
     .detail-grid { grid-template-columns: 1fr; }
+    .wire-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .chart-wrap, .chart-wrap-wide, .chart-wrap-history { min-height: 245px; }
 }
 @media (max-width: 420px) {

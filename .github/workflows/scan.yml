@@ -21,6 +21,8 @@ jobs:
       contents: write
     env:
       PYTHONUNBUFFERED: '1'
+      RFC9460_MAX_CANONICAL_SNAPSHOT_BYTES: '8388608'
+      RFC9460_MAX_PAGES_JSON_BYTES: '16777216'
 
     steps:
       - name: Check out repository
@@ -66,6 +68,14 @@ jobs:
             --latest docs/data/latest.json \
             --scan-dir data/scans \
             --max-age-hours 48
+
+      - name: Enforce generated artifact size limits
+        run: |
+          python -m src.analyzer.pipeline check-sizes \
+            --scan-dir data/scans \
+            --pages-dir docs/data \
+            --max-snapshot-bytes "${RFC9460_MAX_CANONICAL_SNAPSHOT_BYTES}" \
+            --max-pages-json-bytes "${RFC9460_MAX_PAGES_JSON_BYTES}"
 
       - name: Commit snapshot and public views together
         run: |

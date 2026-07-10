@@ -11,6 +11,7 @@ from src.rfc9460_checker.models import (
     SCHEMA_VERSION,
     SVCPARAM_REGISTRY_METADATA,
     VALIDATOR_RULESET_VERSION,
+    WIRE_DECODER_VERSION,
 )
 from src.utils import load_websites as load_compatibility_websites
 
@@ -87,6 +88,7 @@ def test_observation_bundle_records_exact_runtime_provenance(
     assert bundle["scan"]["software"]["python"]
     assert bundle["scan"]["software"]["dnspython"]
     assert bundle["scan"]["validator_ruleset_version"] == VALIDATOR_RULESET_VERSION
+    assert bundle["scan"]["wire_decoder_version"] == WIRE_DECODER_VERSION
     assert bundle["scan"]["svcparam_registry"] == SVCPARAM_REGISTRY_METADATA
     assert bundle["observations"][0]["wire_value"] == {
         "encoding": "base64",

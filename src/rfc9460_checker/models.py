@@ -10,7 +10,8 @@ from typing import Any, Literal, TypedDict  # noqa: TYP001
 
 SCHEMA_VERSION = 2
 DEFAULT_MAX_ALIAS_DEPTH = 8
-VALIDATOR_RULESET_VERSION = "2026-07-09.1"
+VALIDATOR_RULESET_VERSION = "2026-07-09.2"
+WIRE_DECODER_VERSION = "2026-07-09.1"
 
 SVCPARAM_REGISTRY_REFERENCE = "https://www.iana.org/assignments/dns-svcb/dns-svcb.xhtml"
 SVCPARAM_REGISTRY_VERSION = "2026-06-25"
@@ -67,9 +68,8 @@ CLIENT_SUPPORTED_PARAM_KEYS = frozenset({0, 1, 2, 3, 4, 6})
 SUPPORTED_PARAM_KEYS = CLIENT_SUPPORTED_PARAM_KEYS
 
 PARSER_LIMITATIONS = (
-    "Parsing starts after dnspython accepts RDATA; raw-wire ordering, duplicate-key, "
-    "and truncation checks are not independently repeated.",
-    "Registered keys without dedicated decoders are preserved generically as base64 data.",
+    "Registered SvcParamKeys without dedicated wire decoders are preserved as opaque "
+    "base64 data and do not receive key-specific format validation.",
 )
 
 
@@ -80,6 +80,8 @@ class ValidationIssue(TypedDict, total=False):
     severity: Literal["error", "warning", "incompatible"]
     message: str
     key: int | None
+    offset: int
+    length: int
 
 
 class ParamDetail(TypedDict, total=False):
@@ -106,11 +108,14 @@ class SVCBRecord(TypedDict, total=False):
     params: dict[str, Any]
     param_details: list[ParamDetail]
     raw: str
+    presentation: str
     validity: ValidationStatus
     validation_issues: list[ValidationIssue]
     compatible: bool
     usable: bool
     ignored: bool
+    rdata_sha256: str
+    wire: dict[str, Any]
 
 
 class ProbeObservation(TypedDict, total=False):
@@ -154,6 +159,9 @@ class DNSObservation(ProbeObservation, total=False):
     resolution_issues: list[ValidationIssue]
     alias_chain: list[dict[str, Any]]
     alias_resolution_status: str | None
+    wire_decoder_version: str
+    wire_capture: dict[str, Any]
+    wire_validation: dict[str, Any]
 
 
 def param_key_name(key: int) -> str:

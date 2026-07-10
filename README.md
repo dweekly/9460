@@ -12,7 +12,8 @@ For the apex and `www` name of each cohort domain, the web scanner queries HTTPS
 
 - complete RRsets rather than one selected answer;
 - priority, target, AliasMode/ServiceMode, TTL, and all known or unknown parameters;
-- raw DNS presentation text and the resolver that supplied the observation;
+- exact received DNS response and RDATA bytes, canonical base64/length/SHA-256 evidence,
+  normalized DNS presentation text, and the resolver/transport that supplied the observation;
 - absent, NXDOMAIN, timeout, and resolver-error outcomes;
 - structural validity, client compatibility, and validation findings;
 - advertised ALPN identifiers (including exact `h3`), ECH parameters, ports, and IPv4/IPv6 hints.
@@ -25,7 +26,7 @@ The current cohort contains 101 domains from a December 2024 Similarweb/Semrush-
 
 Python 3.14 or newer is required. Dependency minimums reflect the current toolchain tested on July 9, 2026, while each scan records the exact runtime versions used so historical observations remain interpretable.
 
-The project deliberately uses compatible minimums (`>=`) for Python packages rather than freezing every installation to one build. CI and scheduled scans therefore receive compatible fixes, while scan provenance records the exact Python, dnspython, validator, registry, package, and commit versions that produced each observation. Pre-commit `rev` values are concrete because pre-commit hooks require a Git revision for reproducibility; `pre-commit autoupdate` refreshes those revisions as a tested change.
+The project deliberately uses compatible minimums (`>=`) for Python packages rather than freezing every installation to one build. CI and scheduled scans therefore receive compatible fixes, while scan provenance records the exact Python, dnspython, wire-decoder, validator, registry, package, and commit versions that produced each observation. Pre-commit `rev` values are concrete because pre-commit hooks require a Git revision for reproducibility; `pre-commit autoupdate` refreshes those revisions as a tested change.
 
 ```bash
 python -m venv .venv
@@ -64,7 +65,26 @@ python -m src.analyzer.pipeline verify \
   --scan-dir data/scans
 ```
 
-The build is deterministic for the same inputs. A successful scheduled run commits `data/scans/` and `docs/data/` in one commit only after verification passes.
+Before staging generated data, enforce the same artifact-size guard used by the scheduled scan:
+
+```bash
+python -m src.analyzer.pipeline check-sizes \
+  --scan-dir data/scans \
+  --pages-dir docs/data
+```
+
+The default limits are 8 MiB for the newest compressed canonical snapshot and 16 MiB
+for each public Pages JSON file. Those thresholds leave substantial headroom over the
+wire-enabled full scan observed during rollout (about 62 KiB compressed and 1.1 MiB for
+`latest.json`) while stopping an unexpectedly amplified raw capture before it becomes a
+large repository commit. The byte limits are configurable with
+`--max-snapshot-bytes` and `--max-pages-json-bytes`; the scheduled workflow supplies the
+same values through `RFC9460_MAX_CANONICAL_SNAPSHOT_BYTES` and
+`RFC9460_MAX_PAGES_JSON_BYTES` so any increase is an explicit reviewed change.
+
+The build is deterministic for the same inputs. A successful scheduled run commits
+`data/scans/` and `docs/data/` in one commit only after consistency, freshness, and size
+verification pass.
 
 ## Data contracts
 
@@ -74,7 +94,9 @@ The build is deterministic for the same inputs. A successful scheduled run commi
 
 - `scan`: stable scan ID, start/end timestamps, and resolver metadata;
 - `cohort`: cohort identity, source, update date, domains, and count;
-- `observations`: one query observation per name and record type, with complete RRsets, status, validation, features, resolver, and errors;
+- `observations`: one query observation per name and record type, with complete RRsets, status,
+  validation, features, resolver, errors, optional `wire_capture`, and versioned
+  `wire_validation` evidence;
 - `metrics`: explicit denominators plus adoption, validity, and feature metrics;
 - `distributions` and `error_statistics`: supporting aggregate data.
 
@@ -102,7 +124,9 @@ Adoption means a configured resolver returned an RRset for a queried name and re
 
 ### RFC validity and compatibility
 
-Validation preserves and evaluates the complete RRset. It distinguishes AliasMode from ServiceMode, follows bounded aliases, detects loops, checks target and parameter forms, enforces `mandatory`, interprets ALPN and `no-default-alpn`, and validates port and IP-hint encodings.
+Validation preserves and evaluates the complete RRset. Exact UDP datagrams and DNS-over-TCP message bodies are captured at the socket boundary before dnspython parses them. Capture is filtered to the contacted resolver and bounded to a configurable newest-response window (default 32); retained, dropped, filtered, oversized, and discarded-stream counts accompany the evidence. A bounded independent decoder checks DNS/RDATA and EDNS bounds, the uncompressed TargetName rule, strictly increasing unique SvcParamKeys, and the RFC-defined wire formats for keys 0 through 6. Key 5 is checked as an RFC 9849 ECHConfigList, including the standardized `0xfe0d` contents. Any malformed RDATA rejects the complete RRset. Normalized parsing then distinguishes AliasMode from ServiceMode, follows bounded aliases, detects loops, enforces `mandatory`, interprets ALPN and `no-default-alpn`, and separates semantic self-consistency from client compatibility.
+
+AliasMode SvcParams are retained as ordered wire evidence and reported as ignored, not malformed, as RFC 9460 requires. Responses rejected by dnspython can still be classified from the pre-parser capture; this is important because parser object models can otherwise erase duplicate keys or reject encodings whose RFC treatment is only a warning.
 
 An observation can be:
 
@@ -121,7 +145,11 @@ Feature metrics are computed only from the appropriate usable records. For examp
 - DNS and CDN answers can vary by resolver, network, time, and geography. A single-day change is not automatically a deployment event.
 - Historical schema-v1 reports provide aggregate trends but cannot support per-name change attribution.
 - The cohort represents a selected popular-site sample, not the whole web.
-- Current validity checks run after dnspython parses the response. Some malformed wire encodings can be rejected or normalized before the tracker sees them; strict raw-wire capture and decoding is stack-ranked in the roadmap.
+- Wire evidence is available only for scans made after this capability shipped; historical packets are never fabricated by reserializing parser objects.
+- `wire_capture` means bytes received from the network before parsing. A `Message.to_wire()` reserialization is never labeled raw evidence.
+- Registered SvcParamKeys without dedicated decoders are retained as opaque bytes. Their outer framing and key ordering are checked, but key-specific value validation waits for the generated registry/decoder work in the roadmap.
+- If dnspython rejects a packet before producing an `Answer`, recovery independently follows only a complete, unambiguous answer-section CNAME/DNAME chain. Loops, conflicting aliases, malformed names, and unrelated answer owners fail closed.
+- Packet-only differences such as transaction IDs and compression layout remain inspectable evidence but do not trigger deployment-change alerts; normalized records and aggregate validity remain material.
 - ECH configuration presence is a DNS observation. It does not prove an ECH handshake was attempted or accepted.
 - ML-KEM or hybrid post-quantum TLS adoption cannot be inferred from HTTPS/SVCB DNS records.
 

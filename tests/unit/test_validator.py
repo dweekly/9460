@@ -242,6 +242,27 @@ class TestValidateSvcb:
         assert result["status"] == "valid"
         assert result["issues"][0]["code"] == "alias_params_ignored"
 
+    def test_alias_param_parse_errors_are_also_ignored(self) -> None:
+        """Normalization errors in ignored values do not invalidate AliasMode."""
+        alias = {
+            "priority": 0,
+            "target": "alias.example.",
+            "mode": "alias",
+            "params": {"ipv4hint": {"encoding": "base64", "value": "wA=="}},
+            "param_details": [
+                {
+                    "key": 4,
+                    "name": "ipv4hint",
+                    "parse_error": "invalid IPv4 hint wire length",
+                }
+            ],
+        }
+
+        result = validate_svcb_record(alias, owner_name="example.com")
+
+        assert result["status"] == "valid"
+        assert {issue["code"] for issue in result["issues"]} == {"alias_params_ignored"}
+
     def test_mixed_mode_rrset_ignores_service_records(self) -> None:
         """Ignored invalid ServiceMode records do not poison an AliasMode RRset."""
         records = [

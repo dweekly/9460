@@ -1,10 +1,17 @@
 """Tests for canonical snapshots and generated dashboard data."""
 
+import base64
+import copy
 import gzip
+import hashlib
 import json
 from pathlib import Path
 
+import pytest
+
 from src.analyzer.pipeline import (
+    DEFAULT_MAX_CANONICAL_SNAPSHOT_BYTES,
+    DEFAULT_MAX_PAGES_JSON_BYTES,
     build_snapshot,
     compare_snapshots,
     generate_pages_data,
@@ -13,6 +20,7 @@ from src.analyzer.pipeline import (
     load_snapshot,
     normalize_observation,
     run_pipeline,
+    verify_generated_artifact_sizes,
     verify_pages_data,
     write_snapshot,
 )
@@ -480,6 +488,7 @@ def test_snapshot_preserves_scanner_and_validator_provenance() -> None:
                     "dnspython": "2.7.0",
                 },
                 "validator_ruleset_version": "rfc9460-v1",
+                "wire_decoder_version": "wire-v1",
                 "svcparam_registry": {"snapshot": "2026-07-01"},
             },
             "observations": [_row("example.com", "root", "HTTPS")],
@@ -501,9 +510,241 @@ def test_snapshot_preserves_scanner_and_validator_provenance() -> None:
         },
         "source_commit": "abc123",
         "validator_ruleset": "rfc9460-v1",
+        "wire_decoder": "wire-v1",
     }
     assert snapshot["scan"]["extensions"]["validator_ruleset_version"] == "rfc9460-v1"
+    assert snapshot["scan"]["extensions"]["wire_decoder_version"] == "wire-v1"
     assert snapshot["scan"]["extensions"]["svcparam_registry"] == {"snapshot": "2026-07-01"}
+
+
+def test_wire_evidence_is_canonical_verified_and_idempotent() -> None:
+    """Exact packet bytes survive normalization with checked length and digest."""
+    message = b"\x12\x34dns-response"
+    row = {
+        "schema_version": 2,
+        "probe_type": "dns",
+        "domain": "example.com",
+        "full_domain": "example.com",
+        "record_type": "HTTPS",
+        "query_status": "no_answer",
+        "wire_capture": {
+            "format_version": 1,
+            "responses": [{"used_for_observation": True, "message": message}],
+            "unavailable_reason": None,
+        },
+        "wire_validation": {"format_version": 1, "status": "not_applicable"},
+    }
+
+    normalized = normalize_observation(row)
+    blob = normalized["wire_capture"]["responses"][0]["message"]
+
+    assert base64.b64decode(blob["value"], validate=True) == message
+    assert blob["length"] == len(message)
+    assert blob["sha256"] == hashlib.sha256(message).hexdigest()
+    assert normalize_observation(normalized) == normalized
+
+    bad = copy.deepcopy(normalized)
+    bad["wire_capture"]["responses"][0]["message"]["sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="SHA-256"):
+        normalize_observation(bad)
+
+
+def test_packet_only_wire_changes_do_not_create_deployment_change() -> None:
+    """Transaction IDs and packet layout are evidence, not deployment identity."""
+    before_observation = normalize_observation(
+        {
+            "probe_type": "dns",
+            "domain": "example.com",
+            "full_domain": "example.com",
+            "record_type": "HTTPS",
+            "query_status": "present",
+            "has_record": True,
+            "records": [{"priority": 1, "target": ".", "params": {}}],
+            "validation_status": "valid",
+            "wire_capture": {
+                "format_version": 1,
+                "responses": [{"message": b"first-packet", "used_for_observation": True}],
+            },
+        }
+    )
+    after_observation = copy.deepcopy(before_observation)
+    after_observation["wire_capture"]["responses"][0]["message"] = {
+        "encoding": "base64",
+        "value": base64.b64encode(b"second-packet").decode("ascii"),
+    }
+    after_observation = normalize_observation(after_observation)
+    previous = {
+        "scan": {"id": "before", "completed_at": "2026-07-09T00:00:00Z"},
+        "observations": [before_observation],
+    }
+    current = {
+        "scan": {"id": "after", "completed_at": "2026-07-09T01:00:00Z"},
+        "observations": [after_observation],
+    }
+
+    changes = compare_snapshots(previous, current)
+
+    assert changes["summary"] == {"gained": 0, "lost": 0, "changed": 0}
+
+
+def test_record_hash_must_link_to_captured_rdata() -> None:
+    """Normalized semantic records cannot point at unrelated binary evidence."""
+    rdata = b"\x00\x01\x00"
+    digest = hashlib.sha256(rdata).hexdigest()
+    row = {
+        "probe_type": "dns",
+        "domain": "example.com",
+        "full_domain": "example.com",
+        "record_type": "HTTPS",
+        "query_status": "present",
+        "has_record": True,
+        "records": [{"priority": 1, "target": ".", "params": {}, "rdata_sha256": digest.upper()}],
+        "validation_status": "valid",
+        "wire_capture": {
+            "format_version": 1,
+            "responses": [{"rdata": [{"bytes": rdata}], "used_for_observation": True}],
+        },
+    }
+
+    normalized = normalize_observation(row)
+
+    assert normalized["records"][0]["rdata_sha256"] == digest
+    bad = copy.deepcopy(row)
+    bad["records"][0]["rdata_sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="does not link"):
+        normalize_observation(bad)
+
+    missing_index = copy.deepcopy(row)
+    missing_index["wire_capture"]["responses"][0]["rdata"] = []
+    with pytest.raises(ValueError, match="does not link"):
+        normalize_observation(missing_index)
+
+
+def test_effective_and_resolved_record_hashes_require_their_wire_evidence() -> None:
+    """Terminal alias records link to the nested RRset capture that supplied them."""
+    rdata = b"\x00\x01\x00"
+    digest = hashlib.sha256(rdata).hexdigest()
+    terminal = {
+        "priority": 1,
+        "target": ".",
+        "params": {},
+        "rdata_sha256": digest,
+    }
+    row = {
+        "probe_type": "dns",
+        "domain": "example.com",
+        "full_domain": "example.com",
+        "record_type": "HTTPS",
+        "query_status": "present",
+        "has_record": True,
+        "records": [{"priority": 0, "target": "service.example.", "params": {}}],
+        "effective_records": [copy.deepcopy(terminal)],
+        "validation_status": "valid",
+        "resolved_rrsets": [
+            {
+                "owner_name": "service.example.",
+                "records": [copy.deepcopy(terminal)],
+                "wire_capture": {
+                    "responses": [
+                        {
+                            "used_for_observation": True,
+                            "rdata": [{"bytes": rdata}],
+                        }
+                    ]
+                },
+            }
+        ],
+    }
+
+    normalized = normalize_observation(row)
+
+    assert normalized["effective_records"][0]["rdata_sha256"] == digest
+    assert normalized["resolved_rrsets"][0]["records"][0]["rdata_sha256"] == digest
+
+    missing_nested_index = copy.deepcopy(row)
+    missing_nested_index["resolved_rrsets"][0]["wire_capture"]["responses"][0]["rdata"] = []
+    with pytest.raises(ValueError, match="resolved RRset record.*does not link"):
+        normalize_observation(missing_nested_index)
+
+    unrelated_effective = copy.deepcopy(row)
+    unrelated_effective["effective_records"][0]["rdata_sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="effective record.*does not link"):
+        normalize_observation(unrelated_effective)
+
+
+def test_native_empty_target_is_not_normalized_to_the_root_name() -> None:
+    """A failed wire TargetName decode remains malformed in canonical data."""
+    row = {
+        "probe_type": "dns",
+        "domain": "example.com",
+        "full_domain": "example.com",
+        "record_type": "HTTPS",
+        "query_status": "present",
+        "has_record": True,
+        "records": [
+            {
+                "priority": 1,
+                "target": "",
+                "params": {},
+                "validation_issues": [{"code": "invalid_target", "severity": "error"}],
+            }
+        ],
+        "validation_status": "invalid",
+    }
+
+    normalized = normalize_observation(row)
+
+    assert normalized["records"][0]["target"] == ""
+
+
+def test_wire_issue_offsets_do_not_create_deployment_change() -> None:
+    """Packet layout is non-material even when retained findings have offsets."""
+    issue = {
+        "code": "duplicate_svcparam_key",
+        "severity": "error",
+        "message": "duplicate at packet offset",
+        "key": 1,
+        "offset": 50,
+        "length": 2,
+    }
+    row = {
+        "probe_type": "dns",
+        "domain": "example.com",
+        "full_domain": "example.com",
+        "record_type": "HTTPS",
+        "query_status": "present",
+        "has_record": True,
+        "records": [
+            {
+                "priority": 1,
+                "target": ".",
+                "params": {"alpn": ["h2"]},
+                "validity": "invalid",
+                "validation_issues": [issue],
+                "usable": False,
+                "wire": {"issues": [issue], "rdata_offset": 40},
+            }
+        ],
+        "validation_status": "invalid",
+        "validation_issues": [issue],
+    }
+    before_observation = normalize_observation(row)
+    shifted = copy.deepcopy(row)
+    shifted_issue = shifted["records"][0]["validation_issues"][0]
+    shifted_issue["offset"] = 60
+    shifted["records"][0]["wire"]["issues"][0]["offset"] = 60
+    shifted["records"][0]["wire"]["rdata_offset"] = 50
+    shifted["validation_issues"][0]["offset"] = 60
+    after_observation = normalize_observation(shifted)
+    previous = {"scan": {"id": "before"}, "observations": [before_observation]}
+    current = {"scan": {"id": "after"}, "observations": [after_observation]}
+
+    assert compare_snapshots(previous, current)["summary"]["changed"] == 0
+
+    semantic_change = copy.deepcopy(after_observation)
+    semantic_change["validation"]["issues"][0]["code"] = "misordered_svcparam_key"
+    current["observations"] = [semantic_change]
+    assert compare_snapshots(previous, current)["summary"]["changed"] == 1
 
 
 def test_https_only_live_scan_has_explicit_zero_svcb_denominator() -> None:
@@ -586,6 +827,143 @@ def test_compare_snapshots_reports_record_transitions() -> None:
     assert changes["gained"][0]["domain"] == "gained.example"
     assert changes["lost"][0]["domain"] == "lost.example"
     assert changes["changed"][0]["fields"] == ["records", "effective_records"]
+
+
+def _wire_snapshot(rdata: bytes, started_at: str) -> dict:
+    digest = hashlib.sha256(rdata).hexdigest()
+    return build_snapshot(
+        {
+            "scan": {
+                "started_at": started_at,
+                "completed_at": started_at,
+                "wire_decoder_version": "wire-v1",
+            },
+            "observations": [
+                {
+                    "schema_version": 2,
+                    "probe_type": "dns",
+                    "domain": "example.com",
+                    "full_domain": "example.com",
+                    "record_type": "HTTPS",
+                    "query_status": "present",
+                    "has_record": True,
+                    "validation_status": "valid",
+                    "records": [
+                        {
+                            "priority": 1,
+                            "target": ".",
+                            "params": {"alpn": ["h2"]},
+                            "rdata_sha256": digest,
+                        }
+                    ],
+                    "wire_capture": {
+                        "format_version": 1,
+                        "responses": [
+                            {
+                                "used_for_observation": True,
+                                "rdata": [{"bytes": rdata}],
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+    )
+
+
+def test_first_wire_snapshot_establishes_a_non_comparable_baseline() -> None:
+    """New evidence representation must not masquerade as deployment changes."""
+    old = build_snapshot(
+        [
+            {
+                "schema_version": 2,
+                "probe_type": "dns",
+                "domain": "example.com",
+                "full_domain": "example.com",
+                "record_type": "HTTPS",
+                "query_status": "present",
+                "has_record": True,
+                "validation_status": "valid",
+                "records": [
+                    {
+                        "priority": 1,
+                        "target": ".",
+                        "params": {"alpn": ["h2"]},
+                    }
+                ],
+            }
+        ],
+        scan_started_at="2026-07-08T12:00:00Z",
+    )
+    new = _wire_snapshot(b"first-wire-rdata", "2026-07-09T12:00:00Z")
+
+    changes = compare_snapshots(old, new)
+
+    assert changes["comparable"] is False
+    assert changes["reason_code"] == "wire_decoder_baseline"
+    assert "comparison resumes with the next wire-enabled scan" in changes["reason"]
+    assert changes["summary"] == {"gained": 0, "lost": 0, "changed": 0}
+    assert changes["gained"] == []
+    assert changes["lost"] == []
+    assert changes["changed"] == []
+
+
+def test_row_wire_version_also_establishes_the_migration_baseline() -> None:
+    """Standalone observation rows promote their wire version to scan provenance."""
+    base = {
+        "schema_version": 2,
+        "probe_type": "dns",
+        "domain": "example.com",
+        "full_domain": "example.com",
+        "record_type": "HTTPS",
+        "query_status": "no_answer",
+        "has_record": False,
+        "validation_status": "not_applicable",
+    }
+    old = build_snapshot([base], scan_started_at="2026-07-08T12:00:00Z")
+    new = build_snapshot(
+        [{**base, "wire_decoder_version": "wire-v1"}],
+        scan_started_at="2026-07-09T12:00:00Z",
+    )
+
+    assert new["scan"]["provenance"]["wire_decoder"] == "wire-v1"
+    changes = compare_snapshots(old, new)
+    assert changes["comparable"] is False
+    assert changes["reason_code"] == "wire_decoder_baseline"
+
+
+def test_row_provenance_retains_multiple_wire_versions_deterministically() -> None:
+    """Mixed row versions remain explicit instead of silently choosing one."""
+    rows = [
+        {
+            "probe_type": "dns",
+            "domain": f"{version}.example",
+            "record_type": "HTTPS",
+            "query_status": "no_answer",
+            "wire_decoder_version": version,
+        }
+        for version in ("wire-v2", "wire-v1")
+    ]
+
+    snapshot = build_snapshot(rows, scan_started_at="2026-07-09T12:00:00Z")
+
+    assert snapshot["scan"]["provenance"]["wire_decoder"] == ["wire-v1", "wire-v2"]
+
+
+def test_wire_to_wire_rdata_identity_remains_material() -> None:
+    """Once the baseline exists, exact RDATA changes remain deployment changes."""
+    old = _wire_snapshot(b"old-wire-rdata", "2026-07-09T12:00:00Z")
+    new = _wire_snapshot(b"new-wire-rdata", "2026-07-10T12:00:00Z")
+
+    changes = compare_snapshots(old, new)
+
+    assert changes["comparable"] is True
+    assert changes["summary"] == {"gained": 0, "lost": 0, "changed": 1}
+    assert changes["changed"][0]["fields"] == ["records", "effective_records"]
+    assert (
+        changes["changed"][0]["before"]["records"][0]["rdata_sha256"]
+        != changes["changed"][0]["after"]["records"][0]["rdata_sha256"]
+    )
 
 
 def test_resolver_change_is_not_a_record_change() -> None:
@@ -781,3 +1159,74 @@ def test_run_pipeline_reads_cli_json_bundle(tmp_path: Path) -> None:
 
     assert set(paths) == {"snapshot", "latest", "history", "changes"}
     assert verify_pages_data(paths["latest"], scan_dir=tmp_path / "scans")["files"] == 3
+
+
+def _write_size_guard_artifacts(
+    tmp_path: Path,
+    *,
+    snapshot_bytes: int = 16,
+    page_bytes: int = 16,
+) -> tuple[Path, Path]:
+    scan_dir = tmp_path / "scans"
+    pages_dir = tmp_path / "pages"
+    scan_dir.mkdir()
+    pages_dir.mkdir()
+    (scan_dir / "rfc9460_scan_2026-07-09_12-00-00.json.gz").write_bytes(b"s" * snapshot_bytes)
+    for filename in ("latest.json", "history.json", "changes.json"):
+        (pages_dir / filename).write_bytes(b"p" * page_bytes)
+    return scan_dir, pages_dir
+
+
+def test_generated_artifact_size_guard_accepts_files_at_the_limit(tmp_path: Path) -> None:
+    """The safeguard reports every tracked artifact and treats the limit as inclusive."""
+    scan_dir, pages_dir = _write_size_guard_artifacts(
+        tmp_path,
+        snapshot_bytes=32,
+        page_bytes=64,
+    )
+
+    result = verify_generated_artifact_sizes(
+        scan_dir=scan_dir,
+        pages_dir=pages_dir,
+        max_snapshot_bytes=32,
+        max_pages_json_bytes=64,
+    )
+
+    assert result["snapshot"]["bytes"] == 32
+    assert [item["bytes"] for item in result["pages"]] == [64, 64, 64]
+    assert result["limits"] == {"snapshot_bytes": 32, "pages_json_bytes": 64}
+
+
+def test_generated_artifact_size_guard_rejects_oversized_snapshot(tmp_path: Path) -> None:
+    """A compressed canonical snapshot cannot cross its independent limit."""
+    scan_dir, pages_dir = _write_size_guard_artifacts(tmp_path, snapshot_bytes=33)
+
+    with pytest.raises(ValueError, match=r"newest canonical snapshot.*33 bytes.*32-byte"):
+        verify_generated_artifact_sizes(
+            scan_dir=scan_dir,
+            pages_dir=pages_dir,
+            max_snapshot_bytes=32,
+            max_pages_json_bytes=64,
+        )
+
+
+def test_generated_artifact_size_guard_rejects_any_public_json(tmp_path: Path) -> None:
+    """Every current or future JSON view in the public data directory is bounded."""
+    scan_dir, pages_dir = _write_size_guard_artifacts(tmp_path)
+    (pages_dir / "future-view.json").write_bytes(b"x" * 65)
+
+    with pytest.raises(ValueError, match=r"public Pages JSON.*future-view.json.*65 bytes.*64-byte"):
+        verify_generated_artifact_sizes(
+            scan_dir=scan_dir,
+            pages_dir=pages_dir,
+            max_snapshot_bytes=32,
+            max_pages_json_bytes=64,
+        )
+
+
+def test_generated_artifact_size_guard_defaults_leave_substantial_headroom() -> None:
+    """Defaults remain well above the observed wire-enabled full-scan artifacts."""
+    assert DEFAULT_MAX_CANONICAL_SNAPSHOT_BYTES == 8 * 1024 * 1024
+    assert DEFAULT_MAX_PAGES_JSON_BYTES == 16 * 1024 * 1024
+    assert DEFAULT_MAX_CANONICAL_SNAPSHOT_BYTES > 62 * 1024
+    assert DEFAULT_MAX_PAGES_JSON_BYTES > 1_100_000

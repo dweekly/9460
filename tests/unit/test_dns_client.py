@@ -1,6 +1,6 @@
 """Tests for DNS client module."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import dns.rdata
 import dns.rdataclass
@@ -10,6 +10,7 @@ import pytest
 
 from src.rfc9460_checker.dns_client import RFC9460Checker
 from src.rfc9460_checker.exceptions import DNSQueryError
+from src.rfc9460_checker.wire_capture import CapturingBackend
 
 
 class TestRFC9460Checker:
@@ -47,7 +48,7 @@ class TestRFC9460Checker:
             assert result["domain"] == domain
             assert result["subdomain"] == "root"
             assert result["query_error"] is None
-            mock_resolve.assert_called_once_with(domain, "HTTPS")
+            mock_resolve.assert_called_once_with(domain, "HTTPS", backend=ANY)
 
     @pytest.mark.asyncio
     async def test_query_https_record_nxdomain(self, checker):
@@ -90,6 +91,10 @@ class TestRFC9460Checker:
             assert result["has_https_record"] is False
             assert result["query_error"] == "Timeout"
             assert result["validation_status"] == "not_applicable"
+            assert result["wire_capture"]["capture_metadata"]["retained_capture_count"] == 0
+            assert result["wire_capture"]["unavailable_reason"] == (
+                "the DNS transport capture layer ran but retained no response"
+            )
 
     @pytest.mark.asyncio
     async def test_query_https_record_with_subdomain(self, checker):
@@ -104,7 +109,7 @@ class TestRFC9460Checker:
 
             assert result["subdomain"] == subdomain
             assert result["full_domain"] == f"{subdomain}.{domain}"
-            mock_resolve.assert_called_once_with(f"{subdomain}.{domain}", "HTTPS")
+            mock_resolve.assert_called_once_with(f"{subdomain}.{domain}", "HTTPS", backend=ANY)
 
     @pytest.mark.asyncio
     async def test_query_https_record_invalid_domain(self, checker):
@@ -212,7 +217,7 @@ class TestRFC9460Checker:
 
         assert result["query_name"] == "_dns.example.com"
         assert result["subdomain"] == "_dns"
-        resolve.assert_called_once_with("_dns.example.com", "SVCB")
+        resolve.assert_called_once_with("_dns.example.com", "SVCB", backend=ANY)
 
     def test_clear_cache(self, checker):
         """Test cache clearing."""
@@ -278,8 +283,9 @@ class TestRFC9460Checker:
             '1 . alpn="h3"',
         )
 
-        async def resolve(owner_name, record_type):
+        async def resolve(owner_name, record_type, *, backend):
             assert record_type == "HTTPS"
+            assert isinstance(backend, CapturingBackend)
             return [alias] if owner_name == "example.com" else [service]
 
         with patch.object(checker.resolver, "resolve", new_callable=AsyncMock) as mock_resolve:
@@ -307,8 +313,9 @@ class TestRFC9460Checker:
             "0 example.com.",
         )
 
-        async def resolve(owner_name, record_type):
+        async def resolve(owner_name, record_type, *, backend):
             assert record_type == "HTTPS"
+            assert isinstance(backend, CapturingBackend)
             return [first] if owner_name == "example.com" else [second]
 
         with patch.object(checker.resolver, "resolve", new_callable=AsyncMock) as mock_resolve:

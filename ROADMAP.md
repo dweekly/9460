@@ -19,11 +19,10 @@ Publishing an HTTPS or SVCB record is optional, so record absence is not RFC non
 
 ## Now
 
-- [ ] Add raw DNS wire capture and a strict SVCB decoder before dnspython object normalization so duplicate or misordered SvcParam keys, malformed lengths, and AliasMode parameters can be classified exactly; retain normalized presentation separately.
+- [ ] Generate the SvcParam decoder registry from a checked-in, dated IANA snapshot and add decoders/validators for newly assigned keys without treating “known” as “supported by the measurement client.”
 
 ## Next
 
-- [ ] Generate the SvcParam decoder registry from a checked-in, dated IANA snapshot and add decoders/validators for newly assigned keys without treating “known” as “supported by the measurement client.”
 - [ ] Design an extensible active-probe framework with versioned DNS, TLS, and HTTP observation schemas; store probe software, capability-registry version, network vantage, and timestamps so results remain interpretable as protocols evolve.
 - [ ] Add ECH behavior verification separately from DNS advertisement: retain the ECHConfigList, record client support and public-name handling, attempt controlled handshakes, and report advertised, attempted, accepted, rejected, and unverifiable states without weakening privacy.
 - [ ] Measure post-quantum TLS adoption with an ML-KEM-focused handshake probe: use FIPS 203 terminology and parameter sets, record the observed numeric IDs and offered/negotiated named groups, distinguish hybrid from non-hybrid key agreement, retain TLS implementation/version, and treat successful negotiation—not DNS—as the adoption signal. Track the evolving `draft-ietf-tls-ecdhe-mlkem` TLS profile rather than freezing a draft codepoint in analysis code.
@@ -56,6 +55,11 @@ Publishing an HTTPS or SVCB record is optional, so record absence is not RFC non
 - Active TLS and HTTP probes will publish their own capability and methodology metadata and will not be folded into an RFC 9460 “score.”
 - Protocol identifiers and header interpretations are data in a versioned registry, not timeless assumptions embedded only in analysis code.
 - Python package manifests declare tested compatible minimums rather than universal exact pins. Every scan records the exact runtime, parser, ruleset, registry, package, and commit versions used; pre-commit hook revisions remain concrete because that tool requires reproducible Git revisions and are refreshed explicitly.
+- Raw DNS evidence means the exact UDP datagram or unframed DNS-over-TCP message body received at the socket boundary before parsing. Parser reserialization is never labeled raw evidence, and historical scans are not backfilled with invented packets.
+- Each resolution filters captures to the contacted resolver and retains a configurable bounded window (default 32, newest retained), with drop, filter, oversize, and stream-buffer counters stored alongside the evidence.
+- Wire captures use a versioned additive schema-v2 field with canonical base64, decoded length, and SHA-256. Packet-only changes are excluded from deployment alerts, while RDATA identity and aggregate validity remain material.
+- Scheduled scans fail before staging if the newest compressed canonical snapshot exceeds 8 MiB or any public Pages JSON file exceeds 16 MiB. These reviewed, configurable ceilings are intentionally far above the observed wire-enabled scan (about 62 KiB compressed and 1.1 MiB for `latest.json`) while bounding accidental raw-evidence amplification.
+- The `ech` SvcParam is structurally validated as an RFC 9849 ECHConfigList, including the standardized `0xfe0d` contents, but remains a DNS advertisement rather than evidence that this scanner can negotiate ECH.
 - Standards baseline checked 2026-07-09: ML-KEM itself is standardized by NIST FIPS 203 (August 13, 2024), including ML-KEM-512, ML-KEM-768, and ML-KEM-1024. Its hybrid use with ECDHE in TLS 1.3 remains `draft-ietf-tls-ecdhe-mlkem-05`, which expires 2026-11-27. ECH is standardized by RFC 9849 and its SVCB/HTTPS binding by RFC 9848, both published March 2026. Draft revision, retrieval date, observed numeric IDs, and the resolving IANA registry snapshot must accompany measurements.
 
 ## Core-overhaul acceptance criteria
@@ -63,7 +67,7 @@ Publishing an HTTPS or SVCB record is optional, so record absence is not RFC non
 - A scheduled run produces one canonical snapshot and all three Pages JSON files, verifies their shared scan identity, and commits them together.
 - The public dashboard contains no hard-coded scan date, metric, chart series, or domain result and visibly fails closed if generated data cannot be loaded.
 - Complete multi-record RRsets survive collection, serialization, display, and comparison.
-- Validity describes checks possible after dnspython parsing; strict pre-normalization wire validation remains explicitly identified until the raw-wire roadmap item is complete.
+- Exact pre-parser DNS bytes and RDATA survive deterministic, idempotent serialization; malformed-wire fixtures cover bounds, TargetName compression, parameter ordering/duplication, value formats, and whole-RRset rejection.
 - Adoption denominators count queried names of the relevant RR type; SVCB query rows cannot dilute HTTPS adoption or feature metrics.
 - Valid, invalid, valid-but-incompatible, absent, NXDOMAIN, timeout, and resolver-error outcomes remain distinguishable.
 - Legacy aggregate history remains visible and is labeled separately from schema-v2 detailed history.
@@ -71,6 +75,8 @@ Publishing an HTTPS or SVCB record is optional, so record absence is not RFC non
 
 ## Completed changes
 
+- 2026-07-09: Added a reusable pre-commit generated-artifact size check and scheduled-workflow gate, with explicit 8 MiB compressed-snapshot and 16 MiB per-Pages-JSON defaults that fail closed before `git add`.
+- 2026-07-09: Added bounded socket-boundary UDP/TCP DNS capture with observable drop/filter counters, canonical message/RDATA evidence, and a bounded independent SVCB/HTTPS decoder. Wire validity now detects DNS/EDNS framing errors, truncation, compressed TargetName, duplicate or misordered keys, and key 0–6 format errors—including RFC 9849 ECHConfigList structure—before parser normalization. Safe pre-parser recovery verifies the transaction, follows only unambiguous CNAME/DNAME chains, and treats AliasMode parameters as ignored rather than malformed.
 - 2026-07-09: Established scheduled schema-v2 scan `2026-07-09T23:11:17Z` as the first detailed longitudinal baseline and confirmed the deployed `latest.json` was byte-for-byte identical to the canonical snapshot committed by the workflow.
 - 2026-07-09: Promoted queried names and post-CNAME RRset owners to separate first-class fields so longitudinal identity, changes, and dashboard labels remain anchored to the name that was queried.
 - 2026-07-09: Added the schema-v2 canonical scan with complete parsed RRsets, query/owner identity, resolver and software provenance, post-parser validity findings, explicit denominators, and extensible probe types.
