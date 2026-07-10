@@ -58,6 +58,7 @@ Publishing an HTTPS or SVCB record is optional, so record absence is not RFC non
 - Raw DNS evidence means the exact UDP datagram or unframed DNS-over-TCP message body received at the socket boundary before parsing. Parser reserialization is never labeled raw evidence, and historical scans are not backfilled with invented packets.
 - Each resolution filters captures to the contacted resolver and retains a configurable bounded window (default 32, newest retained), with drop, filter, oversize, and stream-buffer counters stored alongside the evidence.
 - Wire captures use a versioned additive schema-v2 field with canonical base64, decoded length, and SHA-256. Packet-only changes are excluded from deployment alerts, while RDATA identity and aggregate validity remain material.
+- Scheduled scans fail before staging if the newest compressed canonical snapshot exceeds 8 MiB or any public Pages JSON file exceeds 16 MiB. These reviewed, configurable ceilings are intentionally far above the observed wire-enabled scan (about 62 KiB compressed and 1.1 MiB for `latest.json`) while bounding accidental raw-evidence amplification.
 - The `ech` SvcParam is structurally validated as an RFC 9849 ECHConfigList, including the standardized `0xfe0d` contents, but remains a DNS advertisement rather than evidence that this scanner can negotiate ECH.
 - Standards baseline checked 2026-07-09: ML-KEM itself is standardized by NIST FIPS 203 (August 13, 2024), including ML-KEM-512, ML-KEM-768, and ML-KEM-1024. Its hybrid use with ECDHE in TLS 1.3 remains `draft-ietf-tls-ecdhe-mlkem-05`, which expires 2026-11-27. ECH is standardized by RFC 9849 and its SVCB/HTTPS binding by RFC 9848, both published March 2026. Draft revision, retrieval date, observed numeric IDs, and the resolving IANA registry snapshot must accompany measurements.
 
@@ -74,6 +75,7 @@ Publishing an HTTPS or SVCB record is optional, so record absence is not RFC non
 
 ## Completed changes
 
+- 2026-07-09: Added a reusable pre-commit generated-artifact size check and scheduled-workflow gate, with explicit 8 MiB compressed-snapshot and 16 MiB per-Pages-JSON defaults that fail closed before `git add`.
 - 2026-07-09: Added bounded socket-boundary UDP/TCP DNS capture with observable drop/filter counters, canonical message/RDATA evidence, and a bounded independent SVCB/HTTPS decoder. Wire validity now detects DNS/EDNS framing errors, truncation, compressed TargetName, duplicate or misordered keys, and key 0–6 format errors—including RFC 9849 ECHConfigList structure—before parser normalization. Safe pre-parser recovery verifies the transaction, follows only unambiguous CNAME/DNAME chains, and treats AliasMode parameters as ignored rather than malformed.
 - 2026-07-09: Established scheduled schema-v2 scan `2026-07-09T23:11:17Z` as the first detailed longitudinal baseline and confirmed the deployed `latest.json` was byte-for-byte identical to the canonical snapshot committed by the workflow.
 - 2026-07-09: Promoted queried names and post-CNAME RRset owners to separate first-class fields so longitudinal identity, changes, and dashboard labels remain anchored to the name that was queried.

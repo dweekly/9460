@@ -52,6 +52,12 @@ jobs:
             --scan-dir data/scans \
             --max-age-hours 48
 
+      - name: Enforce generated artifact size limits
+        run: |
+          python -m src.analyzer.pipeline check-sizes \
+            --scan-dir data/scans \
+            --pages-dir docs/data
+
       - name: Configure Pages
         uses: actions/configure-pages@v6
 

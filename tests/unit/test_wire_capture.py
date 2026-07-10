@@ -1,7 +1,5 @@
 """Tests for lossless capture below dnspython's message parser."""
 
-from __future__ import annotations
-
 import socket
 from collections.abc import Awaitable
 from typing import Any

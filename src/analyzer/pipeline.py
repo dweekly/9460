@@ -29,6 +29,10 @@ from .metrics import (
 )
 
 SCHEMA_VERSION = 2
+MEBIBYTE = 1024 * 1024
+DEFAULT_MAX_CANONICAL_SNAPSHOT_BYTES = 8 * MEBIBYTE
+DEFAULT_MAX_PAGES_JSON_BYTES = 16 * MEBIBYTE
+PAGES_DATA_FILENAMES = ("latest.json", "history.json", "changes.json")
 ABSENCE_ERRORS = {"noanswer", "no answer", "no https record", "no svcb record"}
 PROVENANCE_KEYS = (
     "package_version",
@@ -39,6 +43,11 @@ PROVENANCE_KEYS = (
     "wire_decoder",
     "registry_snapshot",
 )
+ROW_PROVENANCE_ALIASES = {
+    "validator_ruleset": ("validator_ruleset_version",),
+    "wire_decoder": ("wire_decoder_version",),
+    "registry_snapshot": ("svcparam_registry",),
+}
 
 
 def _utc_now() -> str:
@@ -861,6 +870,18 @@ def _merge_scan_provenance(
         target.update({key: container[key] for key in PROVENANCE_KEYS if key in container})
 
 
+def _row_provenance_value(row: Mapping[str, Any], key: str) -> Any:
+    """Read one canonical provenance value from a standalone observation row."""
+    for field in (key, *ROW_PROVENANCE_ALIASES.get(key, ())):
+        value = row.get(field)
+        if value is not None:
+            return value
+    nested = row.get("provenance")
+    if isinstance(nested, Mapping):
+        return nested.get(key)
+    return None
+
+
 def build_snapshot(
     data: Any,
     *,
@@ -948,9 +969,9 @@ def build_snapshot(
         if key in source_scan_provenance:
             continue
         values = {
-            _canonical_text(row[key]): _json_safe(row[key])
+            _canonical_text(value): _json_safe(value)
             for row in rows
-            if key in row and row.get(key) is not None
+            if (value := _row_provenance_value(row, key)) is not None
         }
         if len(values) == 1:
             source_scan_provenance[key] = next(iter(values.values()))
@@ -1322,6 +1343,22 @@ def _state(observation: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _has_wire_decoder_provenance(snapshot: Mapping[str, Any]) -> bool:
+    """Return whether a detailed snapshot identifies its wire decoder."""
+    scan = snapshot.get("scan")
+    if not isinstance(scan, Mapping):
+        return False
+    provenance = scan.get("provenance")
+    if not isinstance(provenance, Mapping):
+        return False
+    value = provenance.get("wire_decoder")
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return bool(value)
+    return value is not None
+
+
 def compare_snapshots(
     previous: Mapping[str, Any] | None, current: Mapping[str, Any]
 ) -> dict[str, Any]:
@@ -1347,6 +1384,21 @@ def compare_snapshots(
         "changed": [],
     }
     if previous is None:
+        result["reason_code"] = "no_detailed_predecessor"
+        result["reason"] = (
+            "This is the first detailed schema-v2 scan, so no comparable per-name "
+            "predecessor exists."
+        )
+        return result
+
+    if not _has_wire_decoder_provenance(previous) and _has_wire_decoder_provenance(current):
+        result["comparable"] = False
+        result["reason_code"] = "wire_decoder_baseline"
+        result["reason"] = (
+            "The previous detailed scan lacks wire-decoder provenance. This scan establishes "
+            "the raw-wire evidence baseline, so per-name deployment changes are not comparable; "
+            "comparison resumes with the next wire-enabled scan."
+        )
         return result
 
     before = {
@@ -1489,6 +1541,78 @@ def verify_pages_data(
     return {"scan_id": scan_id, "completed_at": completed_at, "files": 3}
 
 
+def _checked_artifact_size(path: Path, *, limit: int, label: str) -> dict[str, Any]:
+    if not path.is_file():
+        raise ValueError(f"missing {label}: {path}")
+    size = path.stat().st_size
+    if size > limit:
+        raise ValueError(
+            f"{label} {path} is {size} bytes ({size / MEBIBYTE:.2f} MiB), "
+            f"exceeding the {limit}-byte ({limit / MEBIBYTE:.2f} MiB) limit; "
+            "inspect the generated payload before raising the configured limit"
+        )
+    return {"path": str(path), "bytes": size, "limit_bytes": limit}
+
+
+def verify_generated_artifact_sizes(
+    *,
+    scan_dir: Path,
+    pages_dir: Path,
+    max_snapshot_bytes: int = DEFAULT_MAX_CANONICAL_SNAPSHOT_BYTES,
+    max_pages_json_bytes: int = DEFAULT_MAX_PAGES_JSON_BYTES,
+) -> dict[str, Any]:
+    """Fail closed when newly generated tracked artifacts exceed safe size limits."""
+    if max_snapshot_bytes <= 0:
+        raise ValueError("max_snapshot_bytes must be greater than zero")
+    if max_pages_json_bytes <= 0:
+        raise ValueError("max_pages_json_bytes must be greater than zero")
+
+    snapshots = _snapshot_paths(scan_dir)
+    if not snapshots:
+        raise ValueError(f"no canonical snapshots found in {scan_dir}")
+    snapshot = _checked_artifact_size(
+        snapshots[-1],
+        limit=max_snapshot_bytes,
+        label="newest canonical snapshot",
+    )
+
+    required_pages = [pages_dir / filename for filename in PAGES_DATA_FILENAMES]
+    missing = [path for path in required_pages if not path.is_file()]
+    if missing:
+        raise ValueError(
+            "missing generated Pages data: " + ", ".join(str(path) for path in missing)
+        )
+    # Include future public JSON views automatically instead of silently leaving
+    # them outside the pre-commit safeguard.
+    page_paths = sorted(set(required_pages).union(pages_dir.glob("*.json")))
+    pages = [
+        _checked_artifact_size(
+            path,
+            limit=max_pages_json_bytes,
+            label="public Pages JSON",
+        )
+        for path in page_paths
+    ]
+    return {
+        "snapshot": snapshot,
+        "pages": pages,
+        "limits": {
+            "snapshot_bytes": max_snapshot_bytes,
+            "pages_json_bytes": max_pages_json_bytes,
+        },
+    }
+
+
+def _positive_byte_limit(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("must be an integer number of bytes") from error
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be greater than zero")
+    return parsed
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build and verify RFC 9460 tracker data")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -1508,11 +1632,28 @@ def _parser() -> argparse.ArgumentParser:
     verify.add_argument("--latest", type=Path, default=Path("docs/data/latest.json"))
     verify.add_argument("--scan-dir", type=Path, default=Path("data/scans"))
     verify.add_argument("--max-age-hours", type=float, default=48.0)
+
+    sizes = commands.add_parser(
+        "check-sizes",
+        help="enforce pre-commit size limits for generated tracked data",
+    )
+    sizes.add_argument("--scan-dir", type=Path, default=Path("data/scans"))
+    sizes.add_argument("--pages-dir", type=Path, default=Path("docs/data"))
+    sizes.add_argument(
+        "--max-snapshot-bytes",
+        type=_positive_byte_limit,
+        default=DEFAULT_MAX_CANONICAL_SNAPSHOT_BYTES,
+    )
+    sizes.add_argument(
+        "--max-pages-json-bytes",
+        type=_positive_byte_limit,
+        default=DEFAULT_MAX_PAGES_JSON_BYTES,
+    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run the build or verification command."""
+    """Run a canonical-data build or verification command."""
     args = _parser().parse_args(argv)
     if args.command == "build":
         paths = run_pipeline(
@@ -1525,9 +1666,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(json.dumps({name: str(path) for name, path in paths.items()}, sort_keys=True))
         return 0
-    result = verify_pages_data(
-        args.latest, scan_dir=args.scan_dir, max_age_hours=args.max_age_hours
-    )
+    if args.command == "verify":
+        result = verify_pages_data(
+            args.latest, scan_dir=args.scan_dir, max_age_hours=args.max_age_hours
+        )
+    else:
+        result = verify_generated_artifact_sizes(
+            scan_dir=args.scan_dir,
+            pages_dir=args.pages_dir,
+            max_snapshot_bytes=args.max_snapshot_bytes,
+            max_pages_json_bytes=args.max_pages_json_bytes,
+        )
     print(json.dumps(result, sort_keys=True))
     return 0
 

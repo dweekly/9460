@@ -203,6 +203,9 @@ class TestParseHttpsRecord:
         assert any("opaque" in limitation for limitation in PARSER_LIMITATIONS)
         assert result["wire_validation"]["status"] == "not_collected"
         assert result["wire_capture"]["responses"] == []
+        assert result["wire_capture"]["unavailable_reason"] == (
+            "input did not pass through the DNS transport capture layer"
+        )
 
 
 class TestParseSvcbRecord:

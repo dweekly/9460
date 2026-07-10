@@ -91,6 +91,10 @@ class TestRFC9460Checker:
             assert result["has_https_record"] is False
             assert result["query_error"] == "Timeout"
             assert result["validation_status"] == "not_applicable"
+            assert result["wire_capture"]["capture_metadata"]["retained_capture_count"] == 0
+            assert result["wire_capture"]["unavailable_reason"] == (
+                "the DNS transport capture layer ran but retained no response"
+            )
 
     @pytest.mark.asyncio
     async def test_query_https_record_with_subdomain(self, checker):

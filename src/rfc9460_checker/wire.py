@@ -5,8 +5,6 @@ on the datagram or TCP message body captured at the socket boundary, before a
 library can reject or normalize duplicate keys, parameter order, or names.
 """
 
-from __future__ import annotations
-
 import base64
 import hashlib
 from typing import Any
@@ -72,6 +70,7 @@ def _decode_name(
     *,
     allow_compression: bool,
     compression_code: str,
+    compression_message: str,
     max_jumps: int,
 ) -> tuple[str | None, int, list[dict[str, Any]]]:
     """Decode one DNS name and report bytes consumed at its original location."""
@@ -117,13 +116,14 @@ def _decode_name(
                 issues.append(
                     _issue(
                         compression_code,
-                        "RFC 9460 TargetName must be uncompressed",
+                        compression_message,
                         offset=cursor,
                         length=2,
                     )
                 )
             if not jumped:
                 consumed += 2
+            invalid_pointer = False
             if pointer >= len(message):
                 issues.append(
                     _issue(
@@ -133,6 +133,18 @@ def _decode_name(
                         length=2,
                     )
                 )
+                invalid_pointer = True
+            if pointer >= cursor:
+                issues.append(
+                    _issue(
+                        "forward_compression_pointer",
+                        "DNS compression pointers must point to a prior name occurrence",
+                        offset=cursor,
+                        length=2,
+                    )
+                )
+                invalid_pointer = True
+            if invalid_pointer:
                 return None, consumed, issues
             if pointer in visited or jumps >= max_jumps:
                 issues.append(
@@ -545,6 +557,41 @@ def _param_format_issues(key: int, value: bytes, offset: int) -> list[dict[str, 
     return issues
 
 
+def _edns_option_issues(message: bytes, start: int, end: int) -> list[dict[str, Any]]:
+    """Validate the generic EDNS option-code/length/value framing."""
+    issues: list[dict[str, Any]] = []
+    cursor = start
+    while cursor < end:
+        remaining = end - cursor
+        if remaining < 4:
+            issues.append(
+                _issue(
+                    "truncated_edns_option_header",
+                    "OPT RDATA ends within an EDNS option code/length header",
+                    offset=cursor,
+                    length=remaining,
+                )
+            )
+            break
+        option_code = int.from_bytes(message[cursor : cursor + 2], "big")
+        option_length = int.from_bytes(message[cursor + 2 : cursor + 4], "big")
+        value_offset = cursor + 4
+        value_end = value_offset + option_length
+        if value_end > end:
+            issues.append(
+                _issue(
+                    "truncated_edns_option_value",
+                    f"EDNS option {option_code} declares {option_length} value octets, "
+                    f"but only {end - value_offset} remain",
+                    offset=value_offset,
+                    length=max(end - value_offset, 0),
+                )
+            )
+            break
+        cursor = value_end
+    return issues
+
+
 def _decode_svcb_at(
     message: bytes,
     start: int,
@@ -582,6 +629,7 @@ def _decode_svcb_at(
         end,
         allow_compression=False,
         compression_code="compressed_target_name",
+        compression_message="RFC 9460 TargetName must be uncompressed",
         max_jumps=max_name_jumps,
     )
     issues.extend(name_issues)
@@ -762,6 +810,7 @@ def decode_dns_message(
             len(message),
             allow_compression=True,
             compression_code="compressed_question_name",
+            compression_message="DNS question name must be uncompressed",
             max_jumps=max_name_jumps,
         )
         issues.extend(name_issues)
@@ -802,6 +851,7 @@ def decode_dns_message(
                 len(message),
                 allow_compression=True,
                 compression_code="compressed_owner_name",
+                compression_message="DNS owner name must be uncompressed",
                 max_jumps=max_name_jumps,
             )
             issues.extend(name_issues)
@@ -859,43 +909,49 @@ def decode_dns_message(
                             offset=cursor,
                         )
                     )
+                issues.extend(_edns_option_issues(message, rdata_offset, available_end))
             if rdtype in {5, 39} and rdclass == 1:
                 alias_target, alias_length, alias_issues = _decode_name(
                     message,
                     rdata_offset,
                     available_end,
-                    allow_compression=True,
-                    compression_code="compressed_alias_target",
+                    allow_compression=rdtype == 5,
+                    compression_code=(
+                        "compressed_alias_target" if rdtype == 5 else "compressed_dname_target"
+                    ),
+                    compression_message=(
+                        "CNAME target name must be uncompressed"
+                        if rdtype == 5
+                        else "RFC 6672 DNAME target name must be uncompressed"
+                    ),
                     max_jumps=max_name_jumps,
                 )
                 issues.extend(alias_issues)
-                if (
-                    alias_target is not None
-                    and rdata_end <= len(message)
-                    and alias_length == rdlength
-                ):
-                    aliases.append(
-                        {
-                            "section": section,
-                            "section_index": record_index,
-                            "owner": owner,
-                            "type": rdtype,
-                            "type_name": "CNAME" if rdtype == 5 else "DNAME",
-                            "class": rdclass,
-                            "target": alias_target,
-                            "rdata_offset": rdata_offset,
-                            "rdlength": rdlength,
-                        }
-                    )
-                elif alias_target is not None and rdata_end <= len(message):
-                    issues.append(
-                        _issue(
-                            "trailing_alias_rdata",
-                            "CNAME or DNAME RDATA has bytes after its target name",
-                            offset=rdata_offset + alias_length,
-                            length=rdlength - alias_length,
+                alias_has_errors = any(issue.get("severity") == "error" for issue in alias_issues)
+                if alias_target is not None and rdata_end <= len(message):
+                    if alias_length != rdlength:
+                        issues.append(
+                            _issue(
+                                "trailing_alias_rdata",
+                                "CNAME or DNAME RDATA has bytes after its target name",
+                                offset=rdata_offset + alias_length,
+                                length=rdlength - alias_length,
+                            )
                         )
-                    )
+                    elif not alias_has_errors:
+                        aliases.append(
+                            {
+                                "section": section,
+                                "section_index": record_index,
+                                "owner": owner,
+                                "type": rdtype,
+                                "type_name": "CNAME" if rdtype == 5 else "DNAME",
+                                "class": rdclass,
+                                "target": alias_target,
+                                "rdata_offset": rdata_offset,
+                                "rdlength": rdlength,
+                            }
+                        )
             if rdtype in SVCB_RDTYPES:
                 decoded = _decode_svcb_at(
                     message,

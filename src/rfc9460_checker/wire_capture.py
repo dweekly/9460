@@ -11,12 +11,11 @@ when captures must be associated with a single query; a shared instance keeps a
 single arrival-ordered capture list across all of its sockets.
 """
 
-from __future__ import annotations
-
 import socket
 import struct
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Literal, Protocol, cast  # noqa: TYP001
+from typing import Any, Literal, Protocol, cast  # noqa: TYP001
 
 import dns.asyncbackend
 import dns.exception

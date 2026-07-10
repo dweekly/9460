@@ -208,7 +208,11 @@ def _wire_context(
             "format_version": 1,
             "responses": [],
             "capture_metadata": capture_metadata,
-            "unavailable_reason": "input did not pass through the DNS transport capture layer",
+            "unavailable_reason": (
+                "the DNS transport capture layer ran but retained no response"
+                if capture_metadata is not None
+                else "input did not pass through the DNS transport capture layer"
+            ),
         },
         "wire_validation": {
             "format_version": 1,

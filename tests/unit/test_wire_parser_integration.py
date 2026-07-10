@@ -32,6 +32,15 @@ def _response(rdata: bytes) -> bytes:
     return _response_rrset([rdata])
 
 
+def _response_with_opt(rdata: bytes, options: bytes) -> bytes:
+    message = bytearray(_response(rdata))
+    message[10:12] = b"\x00\x01"
+    message.extend(
+        b"\x00\x00\x29\x04\xd0\x00\x00\x00\x00" + len(options).to_bytes(2, "big") + options
+    )
+    return bytes(message)
+
+
 def _response_rrset(rdatas: list[bytes], qname_text: str = "example.com.") -> bytes:
     qname = _name(qname_text)
     header_and_question = (
@@ -204,6 +213,93 @@ def test_recovery_follows_a_cname_to_the_requested_rrset() -> None:
     assert parsed["query_name"] == "www.example.com"
     assert parsed["rrset_owner_name"] == "edge.example.net."
     assert parsed["validation_status"] == "invalid"
+
+
+def test_recovery_follows_a_valid_suffix_compressed_cname_target() -> None:
+    """Ordinary backward CNAME compression remains usable for owner recovery."""
+    # The question starts at offset 12, so the example.com suffix begins at
+    # offset 16 after the three-octet "www" label.
+    compressed_target = b"\x04edge\xc0\x10"
+    valid_https = b"\x00\x01\x00" + _param(1, b"\x02h2")
+    message = _response_answers(
+        "www.example.com.",
+        [
+            ("www.example.com.", 5, compressed_target),
+            ("edge.example.com.", 65, valid_https),
+        ],
+    )
+    error = dns.exception.FormError("synthetic pre-parser recovery")
+    error._rfc9460_wire_captures = [
+        DNSWireCapture("udp", PEER, message, query_wire=_query("www.example.com."))
+    ]
+
+    parsed = parse_captured_response(error, "HTTPS", "www.example.com")
+
+    assert parsed["record_count"] == 1
+    assert parsed["rrset_owner_name"] == "edge.example.com."
+    assert parsed["validation_status"] == "valid"
+
+
+def test_forward_question_pointer_cannot_recover_a_valid_observation() -> None:
+    """A parser-rejected forward pointer fails transaction-safe recovery closed."""
+    message = bytes.fromhex(
+        "123481800001000100000000c01200410001"
+        "076578616d706c6503636f6d00"
+        "00410001000000010003000100"
+    )
+    error = dns.exception.FormError("forward question pointer")
+    error._rfc9460_wire_captures = [DNSWireCapture("udp", PEER, message, query_wire=_query())]
+
+    parsed = parse_captured_response(error, "HTTPS", "example.com")
+
+    assert "records" not in parsed
+    assert parsed["wire_validation"]["status"] == "failed"
+    assert "forward_compression_pointer" in {
+        issue["code"] for issue in parsed["wire_validation"]["issues"]
+    }
+
+
+def test_malformed_opt_cannot_recover_a_valid_observation() -> None:
+    """Malformed EDNS framing makes an otherwise valid HTTPS RRset invalid."""
+    valid_https = b"\x00\x01\x00" + _param(1, b"\x02h2")
+    message = _response_with_opt(valid_https, b"x")
+    error = dns.exception.FormError("short EDNS option header")
+    error._rfc9460_wire_captures = [DNSWireCapture("udp", PEER, message, query_wire=_query())]
+
+    parsed = parse_captured_response(error, "HTTPS", "example.com")
+
+    assert parsed["record_count"] == 1
+    assert parsed["validation_status"] == "invalid"
+    assert parsed["wire_validation"]["status"] == "failed"
+    assert "truncated_edns_option_header" in {
+        issue["code"] for issue in parsed["validation_issues"]
+    }
+
+
+def test_compressed_dname_cannot_steer_owner_recovery() -> None:
+    """A forbidden compressed DNAME target is evidence, never an alias edge."""
+    qname = "www.example.com."
+    first_answer_offset = 12 + len(_name(qname)) + 4
+    compressed_target = (0xC000 | first_answer_offset).to_bytes(2, "big")
+    valid_https = b"\x00\x01\x00" + _param(1, b"\x02h2")
+    message = _response_answers(
+        qname,
+        [
+            ("target.net.", 1, b"\xc0\x00\x02\x01"),
+            ("example.com.", 39, compressed_target),
+            ("www.target.net.", 65, valid_https),
+        ],
+    )
+    error = dns.exception.FormError("compressed DNAME target")
+    error._rfc9460_wire_captures = [DNSWireCapture("udp", PEER, message, query_wire=_query(qname))]
+
+    parsed = parse_captured_response(error, "HTTPS", "www.example.com")
+
+    assert "records" not in parsed
+    assert parsed["wire_validation"]["status"] == "failed"
+    assert "compressed_dname_target" in {
+        issue["code"] for issue in parsed["wire_validation"]["issues"]
+    }
 
 
 def test_recovery_applies_the_closest_dname_substitution() -> None:

@@ -5,6 +5,7 @@ import hashlib
 
 import dns.exception
 import dns.message
+import dns.name
 import pytest
 
 from src.rfc9460_checker.wire import (
@@ -84,6 +85,15 @@ def _response(rdata: bytes, *, rdtype: int = 65, rdlength: int | None = None) ->
         + rdata
     )
     return header + question + answer
+
+
+def _response_with_opt(rdata: bytes, options: bytes) -> bytes:
+    message = bytearray(_response(rdata))
+    message[10:12] = b"\x00\x01"
+    message.extend(
+        b"\x00\x00\x29\x04\xd0\x00\x00\x00\x00" + len(options).to_bytes(2, "big") + options
+    )
+    return bytes(message)
 
 
 def test_wire_evidence_is_canonical_and_self_describing() -> None:
@@ -261,6 +271,42 @@ def test_packet_decoder_rejects_compressed_target_but_retains_rdata() -> None:
     assert "compressed_target_name" in {issue["code"] for issue in wire_record["svcb"]["issues"]}
 
 
+def test_packet_decoder_rejects_a_forward_compression_pointer() -> None:
+    """A compression pointer cannot refer to a later name in the message."""
+    # The question name at offset 12 points forward to the answer owner at
+    # offset 18. dnspython rejects the same packet with BadPointer.
+    message = bytes.fromhex(
+        "123481800001000100000000c01200410001"
+        "076578616d706c6503636f6d00"
+        "00410001000000010003000100"
+    )
+
+    decoded = decode_dns_message(message)
+
+    assert decoded["status"] == "invalid"
+    assert "forward_compression_pointer" in {issue["code"] for issue in decoded["issues"]}
+    with pytest.raises(dns.name.BadPointer):
+        dns.message.from_wire(message)
+
+
+def test_packet_decoder_rejects_a_compressed_dname_target() -> None:
+    """RFC 6672 requires DNAME RDATA target names to be uncompressed."""
+    message = bytes.fromhex(
+        "123481800001000100000000"
+        "03777777076578616d706c6503636f6d0000410001"
+        "c01000270001000000010002c00c"
+    )
+
+    decoded = decode_dns_message(message)
+
+    assert decoded["status"] == "invalid"
+    assert decoded["aliases"] == []
+    issue_codes = {issue["code"] for issue in decoded["issues"]}
+    assert "compressed_dname_target" in issue_codes
+    assert "trailing_alias_rdata" not in issue_codes
+    assert dns.message.from_wire(message).answer
+
+
 def test_packet_bounds_fail_closed_without_throwing() -> None:
     """Packet and RDATA overruns become findings rather than exceptions."""
     rdata = b"\x00\x01\x00" + _param(1, b"\x02h2")
@@ -288,6 +334,40 @@ def test_packet_decoder_combines_the_edns_extended_rcode() -> None:
     assert decoded["header"]["extended_rcode"] == 1
     assert decoded["header"]["rcode"] == 16
     assert decoded["status"] == "valid"
+
+
+@pytest.mark.parametrize("options", [b"", b"\xfd\xe9\x00\x03abc"])
+def test_packet_decoder_accepts_valid_generic_edns_option_framing(options: bytes) -> None:
+    """Empty OPT RDATA and an opaque, length-bounded option are both valid."""
+    rdata = b"\x00\x01\x00" + _param(1, b"\x02h2")
+
+    decoded = decode_dns_message(_response_with_opt(rdata, options))
+
+    assert decoded["status"] == "valid"
+    assert decoded["issues"] == []
+
+
+@pytest.mark.parametrize(
+    ("options", "code"),
+    [
+        (b"x", "truncated_edns_option_header"),
+        (b"\xfd\xe9\x00\x03ab", "truncated_edns_option_value"),
+    ],
+)
+def test_packet_decoder_rejects_malformed_edns_option_framing(
+    options: bytes,
+    code: str,
+) -> None:
+    """Every EDNS option header and declared value must fit OPT RDATA."""
+    rdata = b"\x00\x01\x00" + _param(1, b"\x02h2")
+
+    message = _response_with_opt(rdata, options)
+    decoded = decode_dns_message(message)
+
+    assert decoded["status"] == "invalid"
+    assert code in {issue["code"] for issue in decoded["issues"]}
+    with pytest.raises(dns.exception.FormError):
+        dns.message.from_wire(message)
 
 
 def test_packet_decoder_rejects_duplicate_opt_records() -> None:

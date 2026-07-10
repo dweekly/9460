@@ -65,7 +65,26 @@ python -m src.analyzer.pipeline verify \
   --scan-dir data/scans
 ```
 
-The build is deterministic for the same inputs. A successful scheduled run commits `data/scans/` and `docs/data/` in one commit only after verification passes.
+Before staging generated data, enforce the same artifact-size guard used by the scheduled scan:
+
+```bash
+python -m src.analyzer.pipeline check-sizes \
+  --scan-dir data/scans \
+  --pages-dir docs/data
+```
+
+The default limits are 8 MiB for the newest compressed canonical snapshot and 16 MiB
+for each public Pages JSON file. Those thresholds leave substantial headroom over the
+wire-enabled full scan observed during rollout (about 62 KiB compressed and 1.1 MiB for
+`latest.json`) while stopping an unexpectedly amplified raw capture before it becomes a
+large repository commit. The byte limits are configurable with
+`--max-snapshot-bytes` and `--max-pages-json-bytes`; the scheduled workflow supplies the
+same values through `RFC9460_MAX_CANONICAL_SNAPSHOT_BYTES` and
+`RFC9460_MAX_PAGES_JSON_BYTES` so any increase is an explicit reviewed change.
+
+The build is deterministic for the same inputs. A successful scheduled run commits
+`data/scans/` and `docs/data/` in one commit only after consistency, freshness, and size
+verification pass.
 
 ## Data contracts
 
