@@ -19,21 +19,21 @@ Publishing an HTTPS or SVCB record is optional, so record absence is not RFC non
 
 ## Now
 
-- [ ] Generate the SvcParam decoder registry from a checked-in, dated IANA snapshot and add decoders/validators for newly assigned keys without treating “known” as “supported by the measurement client.”
+- [ ] Audit the first scheduled wire-enabled production scan: confirm wire-decoder provenance, linked response/RDATA evidence, bounded capture counters, the one-time non-comparable zero-change migration marker, artifact-size gates, canonical/Pages identity, and downstream deployment before beginning the active-probe tranche.
+- [ ] Design an extensible active-probe framework with a shared provenance envelope and independently versioned DNS, ECH-handshake, TLS-key-agreement, and HTTP observation contracts; store probe implementation/version, capability-registry version, network vantage, timestamps, and raw evidence without merging their outcome semantics.
 
 ## Next
 
-- [ ] Design an extensible active-probe framework with versioned DNS, TLS, and HTTP observation schemas; store probe software, capability-registry version, network vantage, and timestamps so results remain interpretable as protocols evolve.
-- [ ] Add ECH behavior verification separately from DNS advertisement: retain the ECHConfigList, record client support and public-name handling, attempt controlled handshakes, and report advertised, attempted, accepted, rejected, and unverifiable states without weakening privacy.
-- [ ] Measure post-quantum TLS adoption with an ML-KEM-focused handshake probe: use FIPS 203 terminology and parameter sets, record the observed numeric IDs and offered/negotiated named groups, distinguish hybrid from non-hybrid key agreement, retain TLS implementation/version, and treat successful negotiation—not DNS—as the adoption signal. Track the evolving `draft-ietf-tls-ecdhe-mlkem` TLS profile rather than freezing a draft codepoint in analysis code.
 - [ ] Add a versioned TLS capability registry for evolving protocol versions, cipher suites, signature algorithms, named groups, certificate properties, ALPN, OCSP behavior, and deprecation state. Store both observed numeric IDs and names resolved from the exact IANA/IETF registry snapshot used for that scan; never reinterpret old scans silently with a newer registry.
+- [ ] Define and enforce repository retention, compression, public-view, and archival policy for DNS wire captures and future TLS/HTTP evidence, including per-probe size budgets and schema-migration rules.
+- [ ] Add a dedicated ECH behavior probe, separate from DNS advertisement and other TLS measurements: retain the ECHConfigList, record client support and public-name handling, attempt controlled handshakes, and report advertised, attempted, accepted, rejected, and unverifiable states without weakening privacy.
+- [ ] Add a dedicated ML-KEM key-agreement probe, separate from ECH: use FIPS 203 terminology and parameter sets, record the observed numeric IDs and offered/negotiated named groups, distinguish hybrid from non-hybrid key agreement, retain TLS implementation/version, and treat successful negotiation—not DNS—as the adoption signal. Track the evolving `draft-ietf-tls-ecdhe-mlkem` TLS profile rather than freezing a draft codepoint in analysis code.
 - [ ] Add a versioned HTTP response probe and header registry for transport, security, privacy, isolation, caching, and reporting signals such as Alt-Svc, HSTS, CSP, Permissions-Policy, Reporting-Endpoints, COOP, COEP, and CORP; retain raw header fields and redirects while publishing normalized metrics.
 - [ ] Schedule and record a standards/registry review at least quarterly through December 2028, covering IETF TLS, HTTP, QUIC, ECH, post-quantum transition guidance, and relevant IANA registries; add new telemetry only with a versioned interpretation and migration note.
 - [ ] Query each configured DNS resolver independently, retain all answers, and report resolver agreement without treating resolver variance as deployment change.
 - [ ] Require persistence across multiple scans or resolvers before alerting on gained, lost, or materially changed deployment signals.
 - [ ] Version and periodically refresh the target cohort while keeping each cohort’s longitudinal series separate; document the ranking source and inclusion rules.
 - [ ] Add per-domain history, filters, machine-readable exports, and opt-in change notifications.
-- [ ] Define repository retention, compression, and archival policy before detailed DNS, TLS, and HTTP observations become large.
 
 ## Later
 
@@ -51,8 +51,11 @@ Publishing an HTTPS or SVCB record is optional, so record absence is not RFC non
 - Detailed canonical snapshots are committed because workflow artifacts are not durable public longitudinal storage.
 - `latest.json` is byte-for-byte equivalent in content to the decompressed newest canonical snapshot. `history.json` and `changes.json` are deterministic derived views.
 - The first schema-v2 scan has no comparable detailed predecessor and must say so explicitly.
+- The first scan with wire-decoder provenance is a one-time migration baseline: `changes.json` is non-comparable with `reason_code: wire_decoder_baseline` and zero per-name changes; normal comparison resumes only between wire-enabled scans.
+- A changed SvcParam registry version or content hash creates a one-time non-comparable interpretation baseline with `reason_code: registry_snapshot_baseline`; adding a content hash to the same version does not. This prevents registry names or references from masquerading as DNS deployment changes.
 - Each metric carries its own count and denominator. Domain count, queried HTTPS names, queried SVCB names, observations, present RRsets, and usable RRsets are not interchangeable.
 - Active TLS and HTTP probes will publish their own capability and methodology metadata and will not be folded into an RFC 9460 “score.”
+- A shared provenance and storage envelope does not merge probe semantics: DNS validity, ECH handshake behavior, TLS key agreement, and HTTP responses retain independent outcomes, denominators, and release criteria.
 - Protocol identifiers and header interpretations are data in a versioned registry, not timeless assumptions embedded only in analysis code.
 - Python package manifests declare tested compatible minimums rather than universal exact pins. Every scan records the exact runtime, parser, ruleset, registry, package, and commit versions used; pre-commit hook revisions remain concrete because that tool requires reproducible Git revisions and are refreshed explicitly.
 - Raw DNS evidence means the exact UDP datagram or unframed DNS-over-TCP message body received at the socket boundary before parsing. Parser reserialization is never labeled raw evidence, and historical scans are not backfilled with invented packets.
@@ -75,6 +78,7 @@ Publishing an HTTPS or SVCB record is optional, so record absence is not RFC non
 
 ## Completed changes
 
+- 2026-07-10: Replaced hand-maintained SvcParam registry data with deterministic generated artifacts from a checked-in, dated exact IANA CSV snapshot, required a reviewed decoded-or-opaque classification for every assigned key, and kept registry knowledge, decoder availability, and measurement-client support as separate versioned capabilities.
 - 2026-07-09: Added a reusable pre-commit generated-artifact size check and scheduled-workflow gate, with explicit 8 MiB compressed-snapshot and 16 MiB per-Pages-JSON defaults that fail closed before `git add`.
 - 2026-07-09: Added bounded socket-boundary UDP/TCP DNS capture with observable drop/filter counters, canonical message/RDATA evidence, and a bounded independent SVCB/HTTPS decoder. Wire validity now detects DNS/EDNS framing errors, truncation, compressed TargetName, duplicate or misordered keys, and key 0–6 format errors—including RFC 9849 ECHConfigList structure—before parser normalization. Safe pre-parser recovery verifies the transaction, follows only unambiguous CNAME/DNAME chains, and treats AliasMode parameters as ignored rather than malformed.
 - 2026-07-09: Established scheduled schema-v2 scan `2026-07-09T23:11:17Z` as the first detailed longitudinal baseline and confirmed the deployed `latest.json` was byte-for-byte identical to the canonical snapshot committed by the workflow.

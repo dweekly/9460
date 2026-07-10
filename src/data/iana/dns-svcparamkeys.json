@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "registry_id": "dns-svcparamkeys",
+  "registry_name": "DNS SVCB Service Parameter Keys (SvcParamKeys)",
+  "registry_page_url": "https://www.iana.org/assignments/dns-svcb/dns-svcb.xhtml",
+  "csv_url": "https://www.iana.org/assignments/dns-svcb/dns-svcparamkeys.csv",
+  "iana_last_updated": "2026-06-25",
+  "retrieved_at": "2026-07-10",
+  "payload_file": "dns-svcparamkeys-2026-06-25.csv.b64",
+  "payload_encoding": "base64",
+  "payload_length": 1264,
+  "payload_sha256": "2a1695a17ab72f36585d166efb9eda2c911d547158a8963adf7914df74de9231"
+}

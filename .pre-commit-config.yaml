@@ -56,6 +56,13 @@ repos:
 
   - repo: local
     hooks:
+      - id: svcparam-registry-codegen
+        name: Verify generated SvcParam registry
+        entry: python3 -m src.registry_codegen --check
+        language: system
+        pass_filenames: false
+        always_run: true
+
       - id: pytest
         name: pytest
         entry: pytest

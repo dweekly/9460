@@ -64,7 +64,11 @@ include = ["src*"]
 version = {attr = "src.__version__"}
 
 [tool.setuptools.package-data]
-"src.data" = ["top_websites.json"]
+"src.data" = [
+    "top_websites.json",
+    "iana/*.b64",
+    "iana/*.json",
+]
 
 [tool.black]
 line-length = 100
