@@ -55,6 +55,11 @@ async function render(fetchOverride) {
     };
     const fetch = fetchOverride || (async (relativePath) => jsonResponse(relativePath));
     const context = vm.createContext({
+        bootstrap: {
+            Modal: {
+                getOrCreateInstance: () => ({ show() {} }),
+            },
+        },
         console,
         document,
         fetch,
@@ -65,6 +70,17 @@ async function render(fetchOverride) {
     vm.runInContext(dashboardScript, context, { filename: "main.js" });
     await new Promise((resolve) => setTimeout(resolve, 100));
     return elements;
+}
+
+function inspectObservation(elements, index = 0) {
+    elements.get("observationsTable").listeners.get("click")({
+        target: {
+            closest(selector) {
+                assert.equal(selector, ".observation-detail");
+                return { dataset: { index: String(index) } };
+            },
+        },
+    });
 }
 
 async function testCurrentData() {
@@ -137,6 +153,94 @@ async function testEscaping() {
     assert.doesNotMatch(table, /<script>alert\(1\)<\/script>/);
 }
 
+async function testWireEvidenceSummary() {
+    const wirePayload = "AQIDBAUGBwgJCgsMDQ4PEA==";
+    const nestedWirePayload = "bmVzdGVkLXdpcmUtcGF5bG9hZA==";
+    let latestFixture;
+    const elements = await render(async (relativePath) => {
+        if (!relativePath.endsWith("latest.json")) return jsonResponse(relativePath);
+        return jsonResponse(relativePath, (latest) => {
+            latest.observations[0].wire_capture = {
+                format_version: 1,
+                responses: [
+                    {
+                        response_index: 0,
+                        transport: "udp",
+                        used_for_observation: false,
+                        message: { encoding: "base64", value: "unused-payload", length: 64, sha256: "unused-hash" },
+                    },
+                    {
+                        response_index: 1,
+                        transport: "tcp",
+                        used_for_observation: true,
+                        message: { encoding: "base64", value: wirePayload, length: 128, sha256: "abc123def456" },
+                    },
+                ],
+                unavailable_reason: null,
+            };
+            latest.observations[0].resolved_rrsets = [
+                {
+                    name: "alias.example.",
+                    wire_capture: {
+                        responses: [
+                            {
+                                response_index: 0,
+                                message: {
+                                    encoding: "base64",
+                                    value: nestedWirePayload,
+                                    length: 19,
+                                    sha256: "nested-hash",
+                                },
+                            },
+                        ],
+                    },
+                },
+            ];
+            latest.observations[0].wire_validation = {
+                format_version: 1,
+                status: "failed",
+                responses: [
+                    { response_index: 1, issues: [{ code: "svcparam_key_order" }, { code: "rdata_bounds" }] },
+                ],
+            };
+            latestFixture = latest;
+            return latest;
+        });
+    });
+
+    inspectObservation(elements);
+    const modal = elements.get("modalBody").innerHTML;
+    const retainedJson = elements.get("observationJson").textContent;
+    assert.match(modal, /<details class="wire-evidence mb-3">/);
+    assert.doesNotMatch(modal, /<details[^>]+open/);
+    assert.match(modal, />Captured</);
+    assert.match(modal, />Failed</);
+    assert.match(modal, />2</);
+    assert.match(modal, />TCP</);
+    assert.match(modal, /128 bytes/);
+    assert.match(modal, /abc123def456/);
+    assert.match(modal, /rdata_bounds/);
+    assert.match(modal, /svcparam_key_order/);
+    assert.doesNotMatch(modal, new RegExp(wirePayload));
+    assert.doesNotMatch(retainedJson, new RegExp(wirePayload));
+    assert.doesNotMatch(retainedJson, new RegExp(nestedWirePayload));
+    assert.doesNotMatch(retainedJson, /unused-payload/);
+    assert.match(retainedJson, /\[binary payload omitted\]/);
+    assert.equal(
+        latestFixture.observations[0].resolved_rrsets[0].wire_capture.responses[0].message.value,
+        nestedWirePayload,
+    );
+}
+
+async function testOldObservationWithoutWireEvidence() {
+    const elements = await render();
+    inspectObservation(elements);
+    const modal = elements.get("modalBody").innerHTML;
+    assert.match(modal, />Not collected</);
+    assert.match(modal, />Not assessed</);
+    assert.match(modal, /Binary payloads are intentionally omitted/);
+}
+
 async function testPartialHistoryFailure() {
     const elements = await render(async (relativePath) => {
         if (relativePath.endsWith("changes.json")) return { ok: false, status: 404 };
@@ -153,6 +257,8 @@ async function testPartialHistoryFailure() {
 async function main() {
     await testCurrentData();
     await testEscaping();
+    await testWireEvidenceSummary();
+    await testOldObservationWithoutWireEvidence();
     await testPartialHistoryFailure();
     console.log("dashboard smoke tests passed");
 }

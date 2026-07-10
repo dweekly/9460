@@ -10,10 +10,16 @@ from .models import (
     SVCPARAM_REGISTRY,
     SVCPARAM_REGISTRY_METADATA,
     VALIDATOR_RULESET_VERSION,
+    WIRE_DECODER_VERSION,
     DNSObservation,
     ProbeObservation,
 )
-from .parser import parse_https_record, parse_svcb_record, parse_svcb_records
+from .parser import (
+    parse_captured_response,
+    parse_https_record,
+    parse_svcb_record,
+    parse_svcb_records,
+)
 from .validator import (
     validate_alpn_id,
     validate_dataset,
@@ -24,11 +30,13 @@ from .validator import (
     validate_svcb_record,
     validate_svcb_rrset,
 )
+from .wire import decode_dns_message, decode_svcb_rdata, wire_evidence
 
 __all__ = [
     "RFC9460Checker",
     "SCHEMA_VERSION",
     "VALIDATOR_RULESET_VERSION",
+    "WIRE_DECODER_VERSION",
     "SVCPARAM_REGISTRY",
     "SVCPARAM_REGISTRY_METADATA",
     "REGISTERED_PARAM_KEYS",
@@ -38,8 +46,12 @@ __all__ = [
     "ProbeObservation",
     "DNSObservation",
     "parse_https_record",
+    "parse_captured_response",
     "parse_svcb_record",
     "parse_svcb_records",
+    "decode_dns_message",
+    "decode_svcb_rdata",
+    "wire_evidence",
     "validate_domain",
     "validate_dns_name",
     "validate_dns_response",

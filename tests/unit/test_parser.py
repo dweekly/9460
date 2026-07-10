@@ -195,12 +195,14 @@ class TestParseHttpsRecord:
         assert result["alpn_protocols"] == "h3-29"
         assert result["has_http3"] is False
 
-    def test_parser_discloses_raw_wire_validation_limit(self) -> None:
-        """Snapshots state that raw-wire validation is delegated to dnspython."""
+    def test_parser_discloses_only_remaining_wire_decoder_limit(self) -> None:
+        """Direct object fixtures are explicit when no transport bytes exist."""
         result = parse_https_record([https_rdata('1 . alpn="h2"')])
 
         assert tuple(result["parser_limitations"]) == PARSER_LIMITATIONS
-        assert any("raw-wire" in limitation for limitation in PARSER_LIMITATIONS)
+        assert any("opaque" in limitation for limitation in PARSER_LIMITATIONS)
+        assert result["wire_validation"]["status"] == "not_collected"
+        assert result["wire_capture"]["responses"] == []
 
 
 class TestParseSvcbRecord:

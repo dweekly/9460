@@ -2,7 +2,7 @@
 
 import ipaddress
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, cast
 
 import dns.name
 
@@ -147,6 +147,29 @@ def validate_svcb_record(
     params = record.get("params", {})
     param_keys = _keys_from_record(record)
 
+    wire = record.get("wire")
+    wire_param_keys: set[int] = set()
+    if isinstance(wire, dict):
+        wire_issues = wire.get("issues", [])
+        if isinstance(wire_issues, list):
+            issues.extend(
+                cast(
+                    ValidationIssue,
+                    issue,
+                )
+                for issue in wire_issues
+                if isinstance(issue, dict)
+                and isinstance(issue.get("code"), str)
+                and issue.get("severity") in {"error", "warning", "incompatible"}
+            )
+        wire_params = wire.get("params", [])
+        if isinstance(wire_params, list):
+            wire_param_keys.update(
+                param["key"]
+                for param in wire_params
+                if isinstance(param, dict) and isinstance(param.get("key"), int)
+            )
+
     if not validate_priority(priority):
         issues.append(_issue("invalid_priority", "error", f"Invalid SvcPriority: {priority}"))
     expected_mode = "alias" if priority == 0 else "service"
@@ -162,19 +185,6 @@ def validate_svcb_record(
     if not isinstance(target, str) or not validate_dns_name(target, allow_root=True):
         issues.append(_issue("invalid_target", "error", f"Invalid TargetName: {target}"))
 
-    details = record.get("param_details", [])
-    if isinstance(details, list):
-        for detail in details:
-            if isinstance(detail, dict) and detail.get("parse_error"):
-                issues.append(
-                    _issue(
-                        "malformed_param",
-                        "error",
-                        str(detail["parse_error"]),
-                        detail.get("key") if isinstance(detail.get("key"), int) else None,
-                    )
-                )
-
     if expected_mode == "alias":
         if owner_name and isinstance(target, str):
             owner = owner_name.rstrip(".").lower()
@@ -187,7 +197,7 @@ def validate_svcb_record(
                         "AliasMode TargetName points back to its owner; resolution will loop",
                     )
                 )
-        if param_keys:
+        if param_keys and not any(issue.get("code") == "alias_params_ignored" for issue in issues):
             issues.append(
                 _issue(
                     "alias_params_ignored",
@@ -196,6 +206,18 @@ def validate_svcb_record(
                 )
             )
     elif isinstance(params, dict):
+        details = record.get("param_details", [])
+        if isinstance(details, list):
+            for detail in details:
+                if isinstance(detail, dict) and detail.get("parse_error"):
+                    issues.append(
+                        _issue(
+                            "malformed_param",
+                            "error",
+                            str(detail["parse_error"]),
+                            detail.get("key") if isinstance(detail.get("key"), int) else None,
+                        )
+                    )
         mandatory = params.get("mandatory")
         if "mandatory" in params:
             mandatory_keys = _mandatory_keys(mandatory)
@@ -271,6 +293,11 @@ def validate_svcb_record(
                 )
             else:
                 for alpn in alpns:
+                    if 1 in wire_param_keys:
+                        # The independent decoder validates the original
+                        # length-prefixed opaque bytes; the display string may
+                        # be a longer base64 representation.
+                        continue
                     if not validate_alpn_id(alpn):
                         issues.append(
                             _issue(
@@ -400,10 +427,26 @@ def validate_svcb_rrset(
         for issue in record.get("validation_issues", [])
         if isinstance(issue, dict)
     ]
-    all_issues = rrset_issues + record_issues
-    if any(record.get("validity") == "invalid" for record in active_records):
+    inactive_wire_issues = [
+        issue
+        for record in records
+        if all(record is not active for active in active_records)
+        for issue in (
+            record.get("wire", {}).get("issues", []) if isinstance(record.get("wire"), dict) else []
+        )
+        if isinstance(issue, dict) and issue.get("severity") == "error"
+    ]
+    all_issues = rrset_issues + record_issues + inactive_wire_issues
+    wire_malformed = any(
+        isinstance(issue, dict) and issue.get("severity") == "error"
+        for record in records
+        for issue in (
+            record.get("wire", {}).get("issues", []) if isinstance(record.get("wire"), dict) else []
+        )
+    )
+    if wire_malformed or any(record.get("validity") == "invalid" for record in active_records):
         status = "invalid"
-        for record in active_records:
+        for record in records:
             record["usable"] = False
     elif not any(record.get("usable") for record in active_records) and any(
         record.get("validity") == "valid_but_incompatible" for record in active_records

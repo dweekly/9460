@@ -36,6 +36,7 @@ PROVENANCE_KEYS = (
     "python_version",
     "dnspython_version",
     "validator_ruleset",
+    "wire_decoder",
     "registry_snapshot",
 )
 
@@ -93,6 +94,98 @@ def _json_safe(value: Any) -> Any:
     if hasattr(value, "tolist"):
         return _json_safe(value.tolist())
     return str(value)
+
+
+def _wire_blob(value: bytes) -> dict[str, Any]:
+    return {
+        "encoding": "base64",
+        "value": base64.b64encode(value).decode("ascii"),
+        "length": len(value),
+        "sha256": hashlib.sha256(value).hexdigest(),
+    }
+
+
+def _normalize_wire_value(value: Any) -> Any:
+    """Canonicalize and verify binary evidence without reserializing DNS data."""
+    if isinstance(value, bytes):
+        return _wire_blob(value)
+    if isinstance(value, Mapping):
+        if value.get("encoding") == "base64" and isinstance(value.get("value"), str):
+            try:
+                decoded = base64.b64decode(value["value"], validate=True)
+            except (binascii.Error, ValueError) as error:
+                raise ValueError("wire evidence contains invalid base64") from error
+            if "length" in value and _integer(value.get("length"), -1) != len(decoded):
+                raise ValueError("wire evidence length does not match decoded bytes")
+            digest = hashlib.sha256(decoded).hexdigest()
+            supplied_digest = value.get("sha256")
+            if supplied_digest is not None and str(supplied_digest).lower() != digest:
+                raise ValueError("wire evidence SHA-256 does not match decoded bytes")
+            normalized = {
+                str(key): _normalize_wire_value(item)
+                for key, item in value.items()
+                if key not in {"encoding", "value", "length", "sha256"}
+            }
+            normalized.update(_wire_blob(decoded))
+            return normalized
+        return {str(key): _normalize_wire_value(item) for key, item in value.items()}
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return [_normalize_wire_value(item) for item in value]
+    return _json_safe(value)
+
+
+def _wire_rdata_hashes(capture: Any) -> set[str]:
+    if not isinstance(capture, Mapping):
+        return set()
+    responses = capture.get("responses")
+    if not isinstance(responses, Sequence) or isinstance(responses, (str, bytes)):
+        return set()
+    used_responses = [
+        response
+        for response in responses
+        if isinstance(response, Mapping) and response.get("used_for_observation") is True
+    ]
+    selected_responses = used_responses or list(responses)
+    hashes: set[str] = set()
+    for response in selected_responses:
+        if not isinstance(response, Mapping):
+            continue
+        rdata = response.get("rdata")
+        if not isinstance(rdata, Sequence) or isinstance(rdata, (str, bytes)):
+            continue
+        for item in rdata:
+            if not isinstance(item, Mapping) or not isinstance(item.get("bytes"), Mapping):
+                continue
+            digest = item["bytes"].get("sha256")
+            if isinstance(digest, str):
+                hashes.add(digest.lower())
+    return hashes
+
+
+def _validate_rdata_links(
+    records: Any,
+    captured_hashes: set[str],
+    *,
+    context: str,
+) -> None:
+    """Require every semantic RDATA digest to link to retained wire evidence."""
+    if not isinstance(records, Sequence) or isinstance(records, (str, bytes)):
+        return
+    for record in records:
+        if not isinstance(record, Mapping):
+            continue
+        digest = record.get("rdata_sha256")
+        if digest is None:
+            continue
+        normalized_digest = str(digest).lower()
+        if len(normalized_digest) != 64 or any(
+            character not in "0123456789abcdef" for character in normalized_digest
+        ):
+            raise ValueError(f"{context} rdata_sha256 is not a SHA-256 hex digest")
+        if normalized_digest not in captured_hashes:
+            raise ValueError(f"{context} rdata_sha256 does not link to captured RDATA")
+        if isinstance(record, dict):
+            record["rdata_sha256"] = normalized_digest
 
 
 def _canonical_text(value: Any) -> str:
@@ -163,6 +256,17 @@ def _normalize_record(record: Mapping[str, Any]) -> dict[str, Any]:
         existing_extensions.update(
             {key: value for key, value in extensions_value.items() if key != "extensions"}
         )
+    wire_value = record.get("wire")
+    if not isinstance(wire_value, Mapping):
+        wire_value = existing_extensions.pop("wire", None)
+    else:
+        existing_extensions.pop("wire", None)
+    rdata_sha256 = record.get("rdata_sha256")
+    if not isinstance(rdata_sha256, str):
+        promoted_hash = existing_extensions.pop("rdata_sha256", None)
+        rdata_sha256 = promoted_hash if isinstance(promoted_hash, str) else None
+    else:
+        existing_extensions.pop("rdata_sha256", None)
     known = {
         "priority",
         "target",
@@ -171,29 +275,38 @@ def _normalize_record(record: Mapping[str, Any]) -> dict[str, Any]:
         "service_params",
         "param_details",
         "raw",
+        "presentation",
         "ttl",
         "validation",
         "validity",
         "validation_issues",
         "usable",
         "ignored",
+        "rdata_sha256",
+        "wire",
         "extensions",
     }
+    target = record.get("target") if "target" in record else "."
     normalized: dict[str, Any] = {
         "priority": _json_safe(record.get("priority")),
-        "target": str(record.get("target") or "."),
+        "target": str(target) if target is not None else None,
         "mode": _record_mode(record),
         "params": _json_safe(record.get("params") or record.get("service_params") or {}),
         "param_details": _json_safe(record.get("param_details") or []),
         "raw": _json_safe(record.get("raw")),
+        "presentation": _json_safe(record.get("presentation") or record.get("raw")),
         "ttl": _json_safe(record.get("ttl")),
         "validity": _json_safe(record.get("validity")),
         "validation_issues": _json_safe(record.get("validation_issues") or []),
         "usable": _json_safe(record.get("usable")),
         "ignored": _json_safe(record.get("ignored")),
     }
+    if isinstance(rdata_sha256, str):
+        normalized["rdata_sha256"] = rdata_sha256
     if isinstance(record.get("validation"), Mapping):
         normalized["validation"] = _json_safe(record["validation"])
+    if isinstance(wire_value, Mapping):
+        normalized["wire"] = _normalize_wire_value(wire_value)
     extensions = dict(existing_extensions)
     extensions.update({key: value for key, value in record.items() if key not in known})
     if extensions:
@@ -503,6 +616,9 @@ def normalize_observation(row: Mapping[str, Any]) -> dict[str, Any]:
         "alias_resolution_status",
         "alias_resolution_error",
         "resolved_rrsets",
+        "wire_capture",
+        "wire_validation",
+        "wire_decoder_version",
         "validation",
         "validation_status",
         "validation_issues",
@@ -540,6 +656,13 @@ def normalize_observation(row: Mapping[str, Any]) -> dict[str, Any]:
         "schema_version",
         "extensions",
     }
+    promoted_wire_fields: dict[str, Any] = {}
+    for field in ("wire_capture", "wire_validation", "wire_decoder_version"):
+        if field in row:
+            promoted_wire_fields[field] = row.get(field)
+            existing_extensions.pop(field, None)
+        elif field in existing_extensions:
+            promoted_wire_fields[field] = existing_extensions.pop(field)
     extensions = {
         key: value
         for key, value in existing_extensions.items()
@@ -586,7 +709,42 @@ def normalize_observation(row: Mapping[str, Any]) -> dict[str, Any]:
         "resolved_rrsets",
     ):
         if field in row:
-            normalized[field] = _json_safe(row.get(field))
+            normalized[field] = (
+                _normalize_wire_value(row.get(field))
+                if field == "resolved_rrsets"
+                else _json_safe(row.get(field))
+            )
+    normalized.update(
+        {
+            field: (_normalize_wire_value(value) if field == "wire_capture" else _json_safe(value))
+            for field, value in promoted_wire_fields.items()
+        }
+    )
+    captured_rdata_hashes = _wire_rdata_hashes(normalized.get("wire_capture"))
+    _validate_rdata_links(
+        normalized["records"],
+        captured_rdata_hashes,
+        context="record",
+    )
+    resolved_rdata_hashes: set[str] = set()
+    resolved_rrsets = normalized.get("resolved_rrsets")
+    if isinstance(resolved_rrsets, Sequence) and not isinstance(resolved_rrsets, (str, bytes)):
+        for rrset in resolved_rrsets:
+            if not isinstance(rrset, Mapping):
+                continue
+            rrset_hashes = _wire_rdata_hashes(rrset.get("wire_capture"))
+            resolved_rdata_hashes.update(rrset_hashes)
+            _validate_rdata_links(
+                rrset.get("records"),
+                rrset_hashes,
+                context="resolved RRset record",
+            )
+    if "effective_records" in normalized:
+        _validate_rdata_links(
+            normalized["effective_records"],
+            captured_rdata_hashes | resolved_rdata_hashes,
+            context="effective record",
+        )
     if extensions:
         normalized["extensions"] = _json_safe(extensions)
     return normalized
@@ -690,6 +848,8 @@ def _merge_scan_provenance(
         target.setdefault("software", dict(software))
     if container.get("validator_ruleset_version") is not None:
         target.setdefault("validator_ruleset", container["validator_ruleset_version"])
+    if container.get("wire_decoder_version") is not None:
+        target.setdefault("wire_decoder", container["wire_decoder_version"])
     if container.get("svcparam_registry") is not None:
         target.setdefault("registry_snapshot", container["svcparam_registry"])
     nested = container.get("provenance")
@@ -1082,11 +1242,64 @@ def _material_resolved_rrsets(value: Any) -> list[dict[str, Any]]:
         "validation_issues",
         "records",
     )
-    return [
-        {key: item.get(key) for key in fields if key in item}
-        for item in value
-        if isinstance(item, Mapping)
-    ]
+    result: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        material = {key: item.get(key) for key in fields if key in item}
+        if "validation_issues" in material:
+            material["validation_issues"] = _material_issues(material["validation_issues"])
+        if "records" in material:
+            material["records"] = _material_records(material["records"])
+        result.append(material)
+    return result
+
+
+def _material_records(value: Any) -> list[dict[str, Any]]:
+    """Drop packet-location evidence while retaining semantic record identity."""
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return []
+    result: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        record = {key: item[key] for key in item if key != "wire"}
+        if "validation_issues" in record:
+            record["validation_issues"] = _material_issues(record["validation_issues"])
+        if isinstance(record.get("validation"), Mapping):
+            record["validation"] = _material_validation(record["validation"])
+        extensions = record.get("extensions")
+        if isinstance(extensions, Mapping) and "wire" in extensions:
+            cleaned = {key: extensions[key] for key in extensions if key != "wire"}
+            if cleaned:
+                record["extensions"] = cleaned
+            else:
+                record.pop("extensions")
+        result.append(record)
+    return result
+
+
+def _material_issues(value: Any) -> list[Any]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return []
+    result: list[Any] = []
+    for issue in value:
+        if isinstance(issue, Mapping):
+            result.append(
+                {key: issue.get(key) for key in ("code", "severity", "key") if key in issue}
+            )
+        else:
+            result.append(issue)
+    return sorted(result, key=_canonical_text)
+
+
+def _material_validation(value: Any) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    result = {key: value[key] for key in value if key != "issues"}
+    if "issues" in value:
+        result["issues"] = _material_issues(value["issues"])
+    return result
 
 
 def _state(observation: Mapping[str, Any]) -> dict[str, Any]:
@@ -1098,10 +1311,10 @@ def _state(observation: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "status": observation.get("status"),
         "present": observation.get("present"),
-        "records": observation.get("records") or [],
-        "validation": observation.get("validation") or {},
+        "records": _material_records(observation.get("records")),
+        "validation": _material_validation(observation.get("validation")),
         "features": observation.get("features") or {},
-        "effective_records": effective_records or [],
+        "effective_records": _material_records(effective_records),
         "effective_validation_status": observation.get("effective_validation_status"),
         "alias_resolution_status": observation.get("alias_resolution_status"),
         "alias_chain": _material_alias_chain(observation.get("alias_chain")),

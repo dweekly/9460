@@ -142,7 +142,7 @@ class TestCheckerIntegration:
 
         resolve_count = 0
 
-        async def mock_resolve(domain, record_type):
+        async def mock_resolve(domain, record_type, *, backend=None):
             nonlocal resolve_count
             resolve_count += 1
             return []

@@ -1,10 +1,13 @@
 """Asynchronous collection of schema-v2 HTTPS and SVCB observations."""
 
 import asyncio
+import ipaddress
 import logging
 from typing import Any, cast
 
 import dns.asyncresolver
+import dns.exception
+import dns.name
 import dns.resolver
 from asyncio_throttle import Throttler
 
@@ -15,9 +18,11 @@ from .models import (
     SCHEMA_VERSION,
     SVCPARAM_REGISTRY_METADATA,
     VALIDATOR_RULESET_VERSION,
+    WIRE_DECODER_VERSION,
 )
-from .parser import parse_https_record, parse_svcb_record
+from .parser import parse_captured_response, parse_https_record, parse_svcb_record
 from .validator import validate_dns_name, validate_domain
+from .wire_capture import CapturingBackend, DNSWireCapture
 
 logger = logging.getLogger(__name__)
 
@@ -71,21 +76,11 @@ class RFC9460Checker:
                 await self._add_alias_resolution(result, full_domain, "HTTPS")
             else:
                 result["query_error"] = "No HTTPS record"
-        except dns.resolver.NXDOMAIN:
-            result["query_status"] = "nxdomain"
-            result["query_error"] = "NXDOMAIN"
-            logger.info("NXDOMAIN for %s", full_domain)
-        except dns.resolver.NoAnswer:
-            result["query_error"] = "No HTTPS record"
-            logger.info("No HTTPS record for %s", full_domain)
-        except dns.resolver.Timeout:
-            result["query_status"] = "timeout"
-            result["query_error"] = "Timeout"
-            logger.warning("Timeout querying %s", full_domain)
         except Exception as error:
-            result["query_status"] = "error"
-            result["query_error"] = str(error)
-            logger.error("Error querying %s: %s", full_domain, error)
+            if self._apply_captured_response(result, error, full_domain, "HTTPS"):
+                await self._add_alias_resolution(result, full_domain, "HTTPS")
+            else:
+                self._classify_query_error(result, error, full_domain, "HTTPS")
 
         self._cache[cache_key] = result
         return result
@@ -114,21 +109,11 @@ class RFC9460Checker:
                 logger.info("Found SVCB record for %s", full_domain)
             else:
                 result["query_error"] = "No SVCB record"
-        except dns.resolver.NXDOMAIN:
-            result["query_status"] = "nxdomain"
-            result["query_error"] = "NXDOMAIN"
-            logger.info("NXDOMAIN for SVCB %s", full_domain)
-        except dns.resolver.NoAnswer:
-            result["query_error"] = "No SVCB record"
-            logger.info("No SVCB record for %s", full_domain)
-        except dns.resolver.Timeout:
-            result["query_status"] = "timeout"
-            result["query_error"] = "Timeout"
-            logger.warning("Timeout querying SVCB %s", full_domain)
         except Exception as error:
-            result["query_status"] = "error"
-            result["query_error"] = str(error)
-            logger.error("Error querying SVCB for %s: %s", full_domain, error)
+            if self._apply_captured_response(result, error, full_domain, "SVCB"):
+                await self._add_alias_resolution(result, full_domain, "SVCB")
+            else:
+                self._classify_query_error(result, error, full_domain, "SVCB")
 
         self._cache[cache_key] = result
         return result
@@ -136,7 +121,132 @@ class RFC9460Checker:
     async def _resolve(self, owner_name: str, record_type: str) -> Any:
         async with self.throttler:
             logger.debug("Querying %s record for %s", record_type, owner_name)
-            return await self.resolver.resolve(owner_name, record_type)
+            backend = CapturingBackend()
+            try:
+                answer = await self.resolver.resolve(owner_name, record_type, backend=backend)
+            except Exception as error:
+                self._attach_wire_captures(
+                    error,
+                    backend.captures,
+                    backend.capture_metadata(),
+                )
+                raise
+            self._attach_wire_captures(
+                answer,
+                backend.captures,
+                backend.capture_metadata(),
+            )
+            return answer
+
+    def _attach_wire_captures(
+        self,
+        target: Any,
+        captures: list[DNSWireCapture],
+        capture_metadata: dict[str, int],
+    ) -> None:
+        """Attach transport bytes without changing dnspython's public objects."""
+        accepted = [capture for capture in captures if self._configured_peer(capture.peer)]
+        metadata = dict(capture_metadata)
+        configured_peer_rejections = len(captures) - len(accepted)
+        if configured_peer_rejections:
+            metadata["retained_capture_count"] = len(accepted)
+            metadata["filtered_datagram_count"] = (
+                metadata.get("filtered_datagram_count", 0) + configured_peer_rejections
+            )
+        try:
+            setattr(target, "_rfc9460_wire_captures", accepted)
+            setattr(target, "_rfc9460_wire_capture_metadata", metadata)
+        except AttributeError, TypeError:
+            # Lightweight list fixtures and some third-party answer proxies do
+            # not allow attributes; those inputs remain explicitly uncaptured.
+            return
+
+    def _configured_peer(self, peer: Any) -> bool:
+        """Accept recovery evidence only from a configured resolver address."""
+        candidate = peer[0] if isinstance(peer, (tuple, list)) and peer else peer
+        candidate_port = (
+            peer[1]
+            if isinstance(peer, (tuple, list))
+            and len(peer) > 1
+            and isinstance(peer[1], int)
+            and not isinstance(peer[1], bool)
+            else None
+        )
+        if not isinstance(candidate, str) or candidate_port is None:
+            return False
+        for configured in self.dns_servers:
+            expected_port = self.resolver.nameserver_ports.get(configured, self.resolver.port)
+            if candidate_port != expected_port:
+                continue
+            try:
+                if ipaddress.ip_address(candidate) == ipaddress.ip_address(configured):
+                    return True
+            except ValueError:
+                if candidate.rstrip(".").lower() == configured.rstrip(".").lower():
+                    return True
+        return False
+
+    @staticmethod
+    def _apply_captured_response(
+        observation: dict[str, Any],
+        error: Exception,
+        owner_name: str,
+        record_type: str,
+    ) -> bool:
+        """Recover records dnspython rejected while preserving its diagnostic."""
+        recovered = parse_captured_response(error, record_type, owner_name)
+        for field in (
+            "wire_decoder_version",
+            "wire_capture",
+            "wire_validation",
+            "resolver",
+            "resolver_port",
+        ):
+            if field in recovered:
+                observation[field] = recovered[field]
+        if not recovered.get("records"):
+            return False
+        observation.update(recovered)
+        observation["has_record"] = True
+        observation["has_https_record"] = record_type == "HTTPS"
+        observation["has_svcb_record"] = record_type == "SVCB"
+        observation["query_status"] = "present"
+        observation["query_error"] = None
+        observation.setdefault("resolution_issues", []).append(
+            {
+                "code": "recovered_pre_parser_wire_response",
+                "severity": "warning",
+                "message": (
+                    "The DNS response was classified from socket-captured bytes after "
+                    f"dnspython did not return an Answer: {error}"
+                ),
+            }
+        )
+        return True
+
+    @staticmethod
+    def _classify_query_error(
+        observation: dict[str, Any],
+        error: Exception,
+        owner_name: str,
+        record_type: str,
+    ) -> None:
+        """Map resolver outcomes without assigning RFC validity to absence."""
+        if isinstance(error, dns.resolver.NXDOMAIN):
+            observation["query_status"] = "nxdomain"
+            observation["query_error"] = "NXDOMAIN"
+            logger.info("NXDOMAIN for %s %s", record_type, owner_name)
+        elif isinstance(error, dns.resolver.NoAnswer):
+            observation["query_error"] = f"No {record_type} record"
+            logger.info("No %s record for %s", record_type, owner_name)
+        elif isinstance(error, dns.resolver.Timeout):
+            observation["query_status"] = "timeout"
+            observation["query_error"] = "Timeout"
+            logger.warning("Timeout querying %s %s", record_type, owner_name)
+        else:
+            observation["query_status"] = "error"
+            observation["query_error"] = str(error)
+            logger.error("Error querying %s for %s: %s", record_type, owner_name, error)
 
     def _base_observation(
         self,
@@ -170,6 +280,19 @@ class RFC9460Checker:
             "svcparam_registry": dict(SVCPARAM_REGISTRY_METADATA),
             "validator_ruleset_version": VALIDATOR_RULESET_VERSION,
             "parser_limitations": list(PARSER_LIMITATIONS),
+            "wire_decoder_version": WIRE_DECODER_VERSION,
+            "wire_capture": {
+                "format_version": 1,
+                "responses": [],
+                "capture_metadata": None,
+                "unavailable_reason": "no DNS response was captured",
+            },
+            "wire_validation": {
+                "format_version": 1,
+                "ruleset_version": WIRE_DECODER_VERSION,
+                "status": "not_applicable",
+                "issues": [],
+            },
             # Absence and transport/query failures are not RFC validity claims.
             "validation_status": "not_applicable",
             "validation_issues": [],
@@ -214,6 +337,7 @@ class RFC9460Checker:
                 for record in current.get("records", [])
                 if isinstance(record, dict)
                 and record.get("mode") == "alias"
+                and record.get("usable") is True
                 and not record.get("ignored")
             ]
             if not alias_records:
@@ -266,21 +390,43 @@ class RFC9460Checker:
                     break
                 current = parsed
                 current_owner = str(parsed.get("rrset_owner_name") or target)
-            except dns.resolver.NXDOMAIN:
-                observation["alias_resolution_status"] = "nxdomain"
-                observation["effective_records"] = []
-                break
-            except dns.resolver.NoAnswer:
-                observation["alias_resolution_status"] = "no_answer"
-                observation["effective_records"] = []
-                break
-            except dns.resolver.Timeout:
-                observation["alias_resolution_status"] = "timeout"
-                observation["effective_records"] = []
-                break
             except Exception as error:
-                observation["alias_resolution_status"] = "error"
-                observation["alias_resolution_error"] = str(error)
+                recovered = parse_captured_response(error, record_type, target)
+                if recovered.get("records"):
+                    current = recovered
+                    current_owner = str(recovered.get("rrset_owner_name") or target)
+                    observation.setdefault("resolution_issues", []).append(
+                        {
+                            "code": "recovered_pre_parser_wire_response",
+                            "severity": "warning",
+                            "message": (
+                                f"Alias target {target} was classified from captured bytes "
+                                f"after dnspython did not return an Answer: {error}"
+                            ),
+                        }
+                    )
+                    continue
+                if recovered.get("wire_capture", {}).get("responses"):
+                    failed_snapshot = {
+                        "query_name": target,
+                        "rrset_owner_name": None,
+                        "validation_status": "not_applicable",
+                        "validation_issues": [],
+                        "records": [],
+                        **recovered,
+                    }
+                    resolved_rrsets.append(
+                        self._rrset_snapshot(failed_snapshot, target, record_type)
+                    )
+                if isinstance(error, dns.resolver.NXDOMAIN):
+                    observation["alias_resolution_status"] = "nxdomain"
+                elif isinstance(error, dns.resolver.NoAnswer):
+                    observation["alias_resolution_status"] = "no_answer"
+                elif isinstance(error, dns.resolver.Timeout):
+                    observation["alias_resolution_status"] = "timeout"
+                else:
+                    observation["alias_resolution_status"] = "error"
+                    observation["alias_resolution_error"] = str(error)
                 observation["effective_records"] = []
                 break
 
@@ -303,12 +449,18 @@ class RFC9460Checker:
             "canonical_name": parsed.get("canonical_name"),
             "validation_status": parsed.get("validation_status"),
             "validation_issues": parsed.get("validation_issues", []),
+            "wire_decoder_version": parsed.get("wire_decoder_version"),
+            "wire_capture": parsed.get("wire_capture"),
+            "wire_validation": parsed.get("wire_validation"),
             "records": parsed.get("records", []),
         }
 
     @staticmethod
     def _normalized_name(name: str) -> str:
-        return name.rstrip(".").lower()
+        try:
+            return dns.name.from_text(name).canonicalize().to_text()
+        except dns.exception.DNSException, UnicodeError, ValueError:
+            return name.rstrip(".").casefold()
 
     async def check_domain(self, domain: str) -> list[dict[str, Any]]:
         """Check root and ``www`` HTTPS names for a website domain.

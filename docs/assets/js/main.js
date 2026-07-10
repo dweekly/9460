@@ -300,6 +300,82 @@
         return `<span class="badge badge-${observation.category}">${escapeHtml(labels[observation.category] || titleCase(observation.category))}</span>`;
     }
 
+    function wireIssueCodes(validation) {
+        if (!validation || typeof validation !== "object") return [];
+        const issues = [];
+        if (Array.isArray(validation.issues)) issues.push(...validation.issues);
+        if (Array.isArray(validation.responses)) {
+            for (const response of validation.responses) {
+                if (response && Array.isArray(response.issues)) issues.push(...response.issues);
+            }
+        }
+        return [...new Set(issues.map((issue) =>
+            typeof issue === "string" ? issue : issue?.code
+        ).filter(Boolean))].sort();
+    }
+
+    function wireEvidenceSummary(observation) {
+        const capture = observation.wire_capture;
+        const validation = observation.wire_validation;
+        const responses = capture && Array.isArray(capture.responses) ? capture.responses : [];
+        const usedResponse = responses.find((response) => response?.used_for_observation === true)
+            || responses.find((response) => response?.accepted === true)
+            || null;
+        const message = usedResponse?.message?.bytes || usedResponse?.message || usedResponse?.response || {};
+        const available = responses.length > 0;
+        const availability = available ? "Captured" : "Not collected";
+        const status = validation?.status ? titleCase(validation.status) : "Not assessed";
+        const length = Number.isFinite(Number(message.length)) ? `${formatNumber(Number(message.length))} bytes` : "—";
+        const hash = message.sha256 || "—";
+        const transport = usedResponse?.transport ? String(usedResponse.transport).toUpperCase() : "—";
+        const issueCodes = wireIssueCodes(validation);
+        const reason = capture?.unavailable_reason;
+        const availabilityClass = available ? "text-bg-success" : "text-bg-secondary";
+        const statusClass = String(validation?.status || "").toLowerCase() === "failed"
+            ? "text-bg-danger"
+            : String(validation?.status || "").toLowerCase() === "passed"
+                ? "text-bg-success"
+                : "text-bg-secondary";
+        const issues = issueCodes.length
+            ? issueCodes.map((code) => `<code class="wire-issue">${escapeHtml(code)}</code>`).join(" ")
+            : '<span class="text-secondary">None reported</span>';
+
+        return `
+            <details class="wire-evidence mb-3">
+                <summary>
+                    <span><i class="bi bi-file-binary me-2"></i>Wire evidence</span>
+                    <span class="wire-summary-badges">
+                        <span class="badge ${availabilityClass}">${availability}</span>
+                        <span class="badge ${statusClass}">${escapeHtml(status)}</span>
+                    </span>
+                </summary>
+                <div class="wire-evidence-body">
+                    <div class="wire-summary-grid">
+                        <div><span>Responses</span><strong>${formatNumber(responses.length)}</strong></div>
+                        <div><span>Used transport</span><strong>${escapeHtml(transport)}</strong></div>
+                        <div><span>Message length</span><strong>${escapeHtml(length)}</strong></div>
+                        <div><span>Message SHA-256</span><code>${escapeHtml(hash)}</code></div>
+                    </div>
+                    ${reason ? `<p class="small text-secondary mb-2">Unavailable reason: ${escapeHtml(reason)}</p>` : ""}
+                    <div class="small"><strong>Issue codes:</strong> ${issues}</div>
+                    <p class="wire-payload-note mb-0"><i class="bi bi-eye-slash me-1"></i>Binary payloads are intentionally omitted from this inspector.</p>
+                </div>
+            </details>`;
+    }
+
+    function redactWirePayloads(observation) {
+        const display = JSON.parse(JSON.stringify(observation));
+        const visit = (value) => {
+            if (!value || typeof value !== "object") return;
+            if (value.encoding === "base64" && typeof value.value === "string") {
+                value.value = "[binary payload omitted]";
+            }
+            for (const child of Object.values(value)) visit(child);
+        };
+        visit(display);
+        return display;
+    }
+
     function renderObservations() {
         const search = byId("domainSearch").value.trim().toLowerCase();
         const filter = byId("statusFilter").value;
@@ -325,9 +401,10 @@
                 <div class="detail-field"><span>Resolver</span><strong>${escapeHtml(observation.resolver)}</strong></div>
                 <div class="detail-field"><span>Classification</span><strong>${escapeHtml(observation.status)}</strong></div>
             </div>
-            <h3 class="h6">Complete retained observation</h3>
+            ${wireEvidenceSummary(observation.raw)}
+            <h3 class="h6">Retained observation metadata</h3>
             <pre class="raw-record"><code id="observationJson"></code></pre>`;
-        byId("observationJson").textContent = JSON.stringify(observation.raw, null, 2);
+        byId("observationJson").textContent = JSON.stringify(redactWirePayloads(observation.raw), null, 2);
         bootstrap.Modal.getOrCreateInstance(byId("detailModal")).show();
     }
 
