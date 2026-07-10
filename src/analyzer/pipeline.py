@@ -1359,6 +1359,42 @@ def _has_wire_decoder_provenance(snapshot: Mapping[str, Any]) -> bool:
     return value is not None
 
 
+def _registry_snapshot_provenance(snapshot: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    """Return structured SvcParam registry provenance when a scan carries it."""
+    scan = snapshot.get("scan")
+    if not isinstance(scan, Mapping):
+        return None
+    provenance = scan.get("provenance")
+    if not isinstance(provenance, Mapping):
+        return None
+    registry = provenance.get("registry_snapshot")
+    return registry if isinstance(registry, Mapping) else None
+
+
+def _registry_snapshot_changed(previous: Mapping[str, Any], current: Mapping[str, Any]) -> bool:
+    """Detect a registry interpretation boundary without penalizing added hash metadata."""
+    before = _registry_snapshot_provenance(previous)
+    after = _registry_snapshot_provenance(current)
+    if before is None or after is None:
+        return False
+
+    before_version = before.get("version", before.get("iana_last_updated"))
+    after_version = after.get("version", after.get("iana_last_updated"))
+    if before_version is not None and after_version is not None:
+        if _canonical_text(before_version) != _canonical_text(after_version):
+            return True
+
+        before_hash = before.get("content_sha256", before.get("payload_sha256"))
+        after_hash = after.get("content_sha256", after.get("payload_sha256"))
+        if before_hash is not None and after_hash is not None:
+            return _canonical_text(before_hash) != _canonical_text(after_hash)
+        # Adding a content hash to the same dated/versioned registry improves
+        # provenance without changing the interpretation boundary.
+        return False
+
+    return _canonical_text(before) != _canonical_text(after)
+
+
 def compare_snapshots(
     previous: Mapping[str, Any] | None, current: Mapping[str, Any]
 ) -> dict[str, Any]:
@@ -1398,6 +1434,16 @@ def compare_snapshots(
             "The previous detailed scan lacks wire-decoder provenance. This scan establishes "
             "the raw-wire evidence baseline, so per-name deployment changes are not comparable; "
             "comparison resumes with the next wire-enabled scan."
+        )
+        return result
+
+    if _registry_snapshot_changed(previous, current):
+        result["comparable"] = False
+        result["reason_code"] = "registry_snapshot_baseline"
+        result["reason"] = (
+            "The SvcParam registry snapshot changed. This scan establishes a new interpretation "
+            "baseline so registry metadata cannot masquerade as a DNS deployment change; "
+            "comparison resumes between scans using the same registry snapshot."
         )
         return result
 

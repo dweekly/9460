@@ -106,7 +106,7 @@ The decompressed newest canonical snapshot has the same JSON content as `docs/da
 
 - `docs/data/latest.json` is the full current canonical snapshot used by headline metrics and domain inspection.
 - `docs/data/history.json` is the aggregate time series. Legacy schema-v1 entries contain only the information available in historical reports; missing detailed history is never invented.
-- `docs/data/changes.json` reports gained, lost, and materially changed record identities between compatible detailed scans. The first schema-v2 scan explicitly has no comparable detailed predecessor.
+- `docs/data/changes.json` reports gained, lost, and materially changed record identities between compatible detailed scans. The first schema-v2 scan has no comparable detailed predecessor; the first wire-enabled scan and a changed SvcParam registry snapshot likewise establish explicit one-scan migration baselines instead of reporting representation or interpretation changes as deployment changes.
 
 Serve the dashboard through HTTP so the browser can load those files:
 
@@ -139,6 +139,36 @@ An observation can be:
 
 Feature metrics are computed only from the appropriate usable records. For example, an `h3` ALPN value is evidence that DNS advertises HTTP/3; it is not proof that a QUIC connection succeeds. Parameters on AliasMode records are not feature-scored.
 
+### SvcParam registry reproducibility
+
+SvcParam registry code is generated from checked-in evidence, not from a live network fetch during
+normal builds. [`src/data/iana/dns-svcparamkeys-2026-06-25.csv.b64`](src/data/iana/dns-svcparamkeys-2026-06-25.csv.b64)
+contains the exact upstream IANA CSV bytes encoded as base64 so checkout and text tooling cannot
+normalize its line endings. [`src/data/iana/dns-svcparamkeys.json`](src/data/iana/dns-svcparamkeys.json)
+records the source URLs, IANA last-updated date, retrieval date, payload encoding, decoded length,
+and SHA-256 digest. The deterministic generated module is
+`src/rfc9460_checker/_generated_svcparam_registry.py`. The preserved payload and manifest are
+included in the built wheel so an installed scanner's registry provenance remains auditable.
+
+Registry maintenance uses three deliberately separate commands:
+
+```bash
+# Offline: verify the manifest, preserved payload, and generated module are consistent.
+python -m src.registry_codegen --check
+
+# Offline: rewrite generated code deterministically from the checked-in snapshot.
+python -m src.registry_codegen --write
+
+# Networked: compare the current upstream IANA CSV with the checked-in evidence.
+python -m src.registry_codegen --check-upstream
+```
+
+The upstream drift check reports change but does not silently rewrite the preserved snapshot or
+generated code. Updating those files is an explicit reviewed change. Registry membership,
+availability of a format-specific decoder, and support by the measurement client remain separate
+capabilities. The first scan after a registry version or content change is explicitly
+non-comparable, and normal deployment comparison resumes between scans using that same snapshot.
+
 ### Reproducibility and limitations
 
 - The current scanner records which configured resolver answered; independent per-resolver consensus is roadmap work.
@@ -147,7 +177,7 @@ Feature metrics are computed only from the appropriate usable records. For examp
 - The cohort represents a selected popular-site sample, not the whole web.
 - Wire evidence is available only for scans made after this capability shipped; historical packets are never fabricated by reserializing parser objects.
 - `wire_capture` means bytes received from the network before parsing. A `Message.to_wire()` reserialization is never labeled raw evidence.
-- Registered SvcParamKeys without dedicated decoders are retained as opaque bytes. Their outer framing and key ordering are checked, but key-specific value validation waits for the generated registry/decoder work in the roadmap.
+- Registered SvcParamKeys without dedicated format decoders are retained as opaque bytes while their outer framing and key ordering are checked. The generated registry identifies their names and references but does not overstate decoder or measurement-client support.
 - If dnspython rejects a packet before producing an `Answer`, recovery independently follows only a complete, unambiguous answer-section CNAME/DNAME chain. Loops, conflicting aliases, malformed names, and unrelated answer owners fail closed.
 - Packet-only differences such as transaction IDs and compression layout remain inspectable evidence but do not trigger deployment-change alerts; normalized records and aggregate validity remain material.
 - ECH configuration presence is a DNS observation. It does not prove an ECH handshake was attempted or accepted.
@@ -170,7 +200,8 @@ These probes will retain their client implementation/version, network vantage, r
 
 - `.github/workflows/scan.yml` runs the daily scanner, builds and verifies the canonical snapshot and Pages data, then commits both atomically.
 - `.github/workflows/deploy.yml` verifies tracked data again and deploys the existing `docs/` artifact to GitHub Pages.
-- `.github/workflows/ci.yml` runs formatting, linting, strict typing, tests, dependency audit, package build, and data freshness checks.
+- Pre-commit and `.github/workflows/ci.yml` run the offline `python -m src.registry_codegen --check` alongside formatting, linting, strict typing, tests, dependency audit, package build, and data freshness checks.
+- `.github/workflows/registry-drift.yml` (`Check IANA Registry Drift`) runs each Monday at 08:23 UTC and on demand with read-only repository permission. It first verifies deterministic generated output offline, then runs the networked `--check-upstream` command so an IANA change is visible without making an unreviewed snapshot or generated-code update.
 
 The scan workflow has only repository-content write permission. Pages and OIDC permissions are isolated to the Pages workflow; the build job needs Pages metadata access and the deployment job performs the write.
 
@@ -178,6 +209,7 @@ The scan workflow has only repository-content write permission. Pages and OIDC p
 
 ```bash
 python -m pip install -r requirements-dev.txt
+python -m src.registry_codegen --check
 black --check --line-length=100 main.py src tests
 isort --check-only --profile=black --line-length=100 main.py src tests
 flake8 --max-line-length=100 --extend-ignore=E203,W503 main.py src tests
@@ -186,6 +218,10 @@ pytest
 node tests/dashboard_smoke.js
 python -m build
 ```
+
+Run `python -m src.registry_codegen --write` only when intentionally regenerating from the
+checked-in snapshot. Run `python -m src.registry_codegen --check-upstream` when network access is
+available to audit IANA drift; it is not part of the deterministic offline build.
 
 Contributions are welcome through [issues](https://github.com/dweekly/9460/issues) and pull requests. Changes that affect interpretation or output should update tests, this README, and `ROADMAP.md` in the same pull request.
 

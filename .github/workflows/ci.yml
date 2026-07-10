@@ -31,6 +31,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
 
+      - name: Verify generated SvcParam registry
+        run: python -m src.registry_codegen --check
+
       - name: Run Black
         run: black --check --line-length=100 main.py src tests
 
@@ -165,6 +168,9 @@ jobs:
           "${smoke_env}/bin/rfc9460-pipeline" --help
           "${smoke_env}/bin/python" -c \
             "from src.cli import load_websites; from src.analyzer.pipeline import load_cohort; assert len(load_websites()) == load_cohort()['count'] == 101"
+          "${smoke_env}/bin/python" -m src.registry_codegen --check
+          "${smoke_env}/bin/python" -c \
+            "import src.rfc9460_checker._generated_svcparam_registry"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7

@@ -1,0 +1,34 @@
+name: Check IANA Registry Drift
+
+on:
+  schedule:
+    - cron: '23 8 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: iana-registry-drift
+  cancel-in-progress: true
+
+jobs:
+  registry-drift:
+    name: Verify generated and upstream registries
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Verify deterministic generated registry
+        run: python -m src.registry_codegen --check
+
+      - name: Check upstream IANA registry drift
+        run: python -m src.registry_codegen --check-upstream

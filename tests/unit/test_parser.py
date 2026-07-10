@@ -9,6 +9,7 @@ import dns.rdatatype
 from src.rfc9460_checker.models import (
     CLIENT_SUPPORTED_PARAM_KEYS,
     DECODED_PARAM_KEYS,
+    OPAQUE_REGISTERED_PARAM_KEYS,
     PARSER_LIMITATIONS,
     REGISTERED_PARAM_KEYS,
     SVCPARAM_REGISTRY_METADATA,
@@ -176,10 +177,18 @@ class TestParseHttpsRecord:
 
         assert REGISTERED_PARAM_KEYS == frozenset(range(13))
         assert DECODED_PARAM_KEYS == frozenset(range(7))
+        assert OPAQUE_REGISTERED_PARAM_KEYS == frozenset(range(7, 13))
+        assert DECODED_PARAM_KEYS.isdisjoint(OPAQUE_REGISTERED_PARAM_KEYS)
+        assert DECODED_PARAM_KEYS | OPAQUE_REGISTERED_PARAM_KEYS == REGISTERED_PARAM_KEYS
+        assert CLIENT_SUPPORTED_PARAM_KEYS <= DECODED_PARAM_KEYS
         assert 5 not in CLIENT_SUPPORTED_PARAM_KEYS
         assert not set(range(7, 13)).intersection(CLIENT_SUPPORTED_PARAM_KEYS)
         assert param_key_name(9) == "tls-supported-groups"
         assert SVCPARAM_REGISTRY_METADATA["version"] == "2026-06-25"
+        assert SVCPARAM_REGISTRY_METADATA["snapshot_date"] == "2026-07-10"
+        assert SVCPARAM_REGISTRY_METADATA["content_sha256"] == (
+            "2a1695a17ab72f36585d166efb9eda2c911d547158a8963adf7914df74de9231"
+        )
         assert result["validator_ruleset_version"] == VALIDATOR_RULESET_VERSION
         detail = next(item for item in result["records"][0]["param_details"] if item["key"] == 9)
         assert detail["registered"] is True

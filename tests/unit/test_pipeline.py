@@ -966,6 +966,78 @@ def test_wire_to_wire_rdata_identity_remains_material() -> None:
     )
 
 
+def _wire_snapshot_with_registry(
+    *,
+    version: str,
+    started_at: str,
+    content_sha256: str | None = None,
+) -> dict:
+    snapshot = _wire_snapshot(b"stable-wire-rdata", started_at)
+    registry = {"authority": "IANA", "version": version}
+    if content_sha256 is not None:
+        registry["content_sha256"] = content_sha256
+    snapshot["scan"]["provenance"]["registry_snapshot"] = registry
+    return snapshot
+
+
+def test_adding_registry_hash_to_the_same_version_remains_comparable() -> None:
+    """Improved provenance alone must not consume another migration baseline."""
+    old = _wire_snapshot_with_registry(
+        version="2026-06-25",
+        started_at="2026-07-10T12:00:00Z",
+    )
+    new = _wire_snapshot_with_registry(
+        version="2026-06-25",
+        content_sha256="a" * 64,
+        started_at="2026-07-11T12:00:00Z",
+    )
+
+    changes = compare_snapshots(old, new)
+
+    assert changes["comparable"] is True
+    assert changes["summary"] == {"gained": 0, "lost": 0, "changed": 0}
+
+
+@pytest.mark.parametrize(
+    ("old_version", "old_hash", "new_version", "new_hash"),
+    [
+        ("2026-06-25", "a" * 64, "2026-07-15", "b" * 64),
+        ("2026-06-25", "a" * 64, "2026-06-25", "b" * 64),
+    ],
+)
+def test_registry_change_establishes_a_non_comparable_interpretation_baseline(
+    old_version: str,
+    old_hash: str,
+    new_version: str,
+    new_hash: str,
+) -> None:
+    """Registry-only reinterpretation cannot masquerade as a DNS deployment change."""
+    old = _wire_snapshot_with_registry(
+        version=old_version,
+        content_sha256=old_hash,
+        started_at="2026-07-10T12:00:00Z",
+    )
+    new = _wire_snapshot_with_registry(
+        version=new_version,
+        content_sha256=new_hash,
+        started_at="2026-07-11T12:00:00Z",
+    )
+
+    changes = compare_snapshots(old, new)
+
+    assert changes["comparable"] is False
+    assert changes["reason_code"] == "registry_snapshot_baseline"
+    assert changes["summary"] == {"gained": 0, "lost": 0, "changed": 0}
+    assert changes["gained"] == changes["lost"] == changes["changed"] == []
+
+    following = _wire_snapshot_with_registry(
+        version=new_version,
+        content_sha256=new_hash,
+        started_at="2026-07-12T12:00:00Z",
+    )
+    assert compare_snapshots(new, following)["comparable"] is True
+
+
 def test_resolver_change_is_not_a_record_change() -> None:
     """Resolver rotation changes provenance, not the observed record identity."""
     base = {
