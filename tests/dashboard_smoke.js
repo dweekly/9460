@@ -233,7 +233,22 @@ async function testWireEvidenceSummary() {
 }
 
 async function testOldObservationWithoutWireEvidence() {
-    const elements = await render();
+    const elements = await render(async (relativePath) => {
+        if (!relativePath.endsWith("latest.json")) return jsonResponse(relativePath);
+        return jsonResponse(relativePath, (latest) => {
+            latest.observations = [{
+                schema_version: 2,
+                probe_type: "dns",
+                domain: "legacy.example",
+                full_domain: "legacy.example",
+                record_type: "HTTPS",
+                query_status: "no_answer",
+                has_record: false,
+                records: [],
+            }];
+            return latest;
+        });
+    });
     inspectObservation(elements);
     const modal = elements.get("modalBody").innerHTML;
     assert.match(modal, />Not collected</);

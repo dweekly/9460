@@ -75,7 +75,7 @@ python -m src.analyzer.pipeline check-sizes \
 
 The default limits are 8 MiB for the newest compressed canonical snapshot and 16 MiB
 for each public Pages JSON file. Those thresholds leave substantial headroom over the
-wire-enabled full scan observed during rollout (about 62 KiB compressed and 1.1 MiB for
+first production wire-enabled scan (about 63 KiB compressed and 1.11 MiB for
 `latest.json`) while stopping an unexpectedly amplified raw capture before it becomes a
 large repository commit. The byte limits are configurable with
 `--max-snapshot-bytes` and `--max-pages-json-bytes`; the scheduled workflow supplies the
