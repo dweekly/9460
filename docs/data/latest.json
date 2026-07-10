@@ -110,11 +110,11 @@
   },
   "distributions": {
     "alpn_protocols": {
-      "h2": 27,
+      "h2": 26,
       "h3": 17
     },
     "priorities": {
-      "1": 29,
+      "1": 28,
       "2": 4
     }
   },
@@ -223,12 +223,12 @@
   "metrics": {
     "adoption": {
       "https": {
-        "count": 29,
+        "count": 28,
         "denominator": 202,
-        "percentage": 14.36
+        "percentage": 13.86
       },
-      "https_count": 29,
-      "overall_adoption": 14.36,
+      "https_count": 28,
+      "overall_adoption": 13.86,
       "root_adoption": 7.92,
       "root_https": {
         "count": 8,
@@ -242,11 +242,11 @@
       },
       "svcb_adoption": 0.0,
       "svcb_count": 0,
-      "www_adoption": 20.79,
+      "www_adoption": 19.8,
       "www_https": {
-        "count": 21,
+        "count": 20,
         "denominator": 101,
-        "percentage": 20.79
+        "percentage": 19.8
       }
     },
     "compatibility": {
@@ -259,51 +259,51 @@
       "domains": 101,
       "https_names": 202,
       "https_observations": 202,
-      "https_present_rrsets": 29,
+      "https_present_rrsets": 28,
       "observations": 202,
       "queried_names": 202,
       "root_https_names": 101,
       "svcb_names": 0,
       "svcb_observations": 0,
       "svcb_present_rrsets": 0,
-      "usable_https_rrsets": 29,
+      "usable_https_rrsets": 28,
       "usable_svcb_rrsets": 0,
       "www_https_names": 101
     },
     "features": {
       "alpn_advertised": {
-        "count": 27,
-        "denominator": 29,
-        "percentage": 93.1
+        "count": 26,
+        "denominator": 28,
+        "percentage": 92.86
       },
       "custom_port": {
         "count": 0,
-        "denominator": 29,
+        "denominator": 28,
         "percentage": 0.0
       },
       "ech_advertised": {
         "count": 0,
-        "denominator": 29,
+        "denominator": 28,
         "percentage": 0.0
       },
       "h3_advertised": {
         "count": 17,
-        "denominator": 29,
-        "percentage": 58.62
+        "denominator": 28,
+        "percentage": 60.71
       },
       "ipv4_hints": {
-        "count": 12,
-        "denominator": 29,
-        "percentage": 41.38
+        "count": 11,
+        "denominator": 28,
+        "percentage": 39.29
       },
       "ipv6_hints": {
         "count": 6,
-        "denominator": 29,
-        "percentage": 20.69
+        "denominator": 28,
+        "percentage": 21.43
       },
       "no_default_alpn": {
         "count": 0,
-        "denominator": 29,
+        "denominator": 28,
         "percentage": 0.0
       }
     },
@@ -311,46 +311,46 @@
       "https": {
         "invalid": {
           "count": 0,
-          "denominator": 29,
+          "denominator": 28,
           "percentage": 0.0
         },
-        "present": 29,
+        "present": 28,
         "unknown": {
           "count": 0,
-          "denominator": 29,
+          "denominator": 28,
           "percentage": 0.0
         },
         "valid": {
-          "count": 29,
-          "denominator": 29,
+          "count": 28,
+          "denominator": 28,
           "percentage": 100.0
         },
         "valid_but_incompatible": {
           "count": 0,
-          "denominator": 29,
+          "denominator": 28,
           "percentage": 0.0
         }
       },
       "overall": {
         "invalid": {
           "count": 0,
-          "denominator": 29,
+          "denominator": 28,
           "percentage": 0.0
         },
-        "present": 29,
+        "present": 28,
         "unknown": {
           "count": 0,
-          "denominator": 29,
+          "denominator": 28,
           "percentage": 0.0
         },
         "valid": {
-          "count": 29,
-          "denominator": 29,
+          "count": 28,
+          "denominator": 28,
           "percentage": 100.0
         },
         "valid_but_incompatible": {
           "count": 0,
-          "denominator": 29,
+          "denominator": 28,
           "percentage": 0.0
         }
       },
@@ -6092,7 +6092,7 @@
           "resolver": "8.8.8.8",
           "resolver_port": 53,
           "rrset_owner_name": "star-mini.c10r.facebook.com.",
-          "ttl": 7200,
+          "ttl": 6728,
           "validation_issues": [],
           "validation_status": "valid"
         }
@@ -6111,7 +6111,7 @@
       "rrtype": "HTTPS",
       "schema_version": 2,
       "status": "present",
-      "ttl": 7200,
+      "ttl": 6728,
       "validation": {
         "issues": [],
         "status": "valid"
@@ -7078,7 +7078,7 @@
           "resolver": "8.8.8.8",
           "resolver_port": 53,
           "rrset_owner_name": "www.google.com.",
-          "ttl": 20889,
+          "ttl": 18092,
           "validation_issues": [],
           "validation_status": "valid"
         }
@@ -7097,7 +7097,7 @@
       "rrtype": "HTTPS",
       "schema_version": 2,
       "status": "present",
-      "ttl": 20889,
+      "ttl": 18092,
       "validation": {
         "issues": [],
         "status": "valid"
@@ -10885,68 +10885,14 @@
     {
       "alias_chain": [],
       "alias_resolution_status": "not_applicable",
-      "canonical_name": "www.paypal.com.cdn.cloudflare.net.",
+      "canonical_name": null,
       "configured_resolvers": [
         "1.1.1.1",
         "208.67.222.222",
         "8.8.8.8"
       ],
       "domain": "paypal.com",
-      "effective_records": [
-        {
-          "extensions": {
-            "compatible": true
-          },
-          "ignored": false,
-          "mode": "service",
-          "param_details": [
-            {
-              "client_supported": true,
-              "decoded": true,
-              "key": 1,
-              "known": true,
-              "name": "alpn",
-              "raw": "\"h2\"",
-              "registered": true,
-              "registry_reference": "RFC 9460, Section 7.1",
-              "value": [
-                "h2"
-              ]
-            },
-            {
-              "client_supported": true,
-              "decoded": true,
-              "key": 4,
-              "known": true,
-              "name": "ipv4hint",
-              "raw": "\"104.18.6.168,104.18.7.168\"",
-              "registered": true,
-              "registry_reference": "RFC 9460, Section 7.3",
-              "value": [
-                "104.18.6.168",
-                "104.18.7.168"
-              ]
-            }
-          ],
-          "params": {
-            "alpn": [
-              "h2"
-            ],
-            "ipv4hint": [
-              "104.18.6.168",
-              "104.18.7.168"
-            ]
-          },
-          "priority": 1,
-          "raw": "1 . alpn=\"h2\" ipv4hint=\"104.18.6.168,104.18.7.168\"",
-          "target": ".",
-          "ttl": null,
-          "usable": true,
-          "validation_issues": [],
-          "validity": "valid"
-        }
-      ],
-      "effective_validation_status": "valid",
+      "effective_records": [],
       "error": null,
       "extensions": {
         "parser_limitations": [
@@ -10964,169 +10910,34 @@
         "validator_ruleset_version": "2026-07-09.1"
       },
       "features": {
-        "alpn": [
-          "h2"
-        ],
+        "alpn": [],
         "custom_port": false,
         "ech_advertised": false,
         "h3_advertised": false,
-        "ipv4_hints": [
-          "104.18.6.168",
-          "104.18.7.168"
-        ],
+        "ipv4_hints": [],
         "ipv6_hints": [],
         "no_default_alpn": false,
         "ports": []
       },
       "name": "www.paypal.com",
-      "owner_name": "www.paypal.com.cdn.cloudflare.net.",
-      "present": true,
+      "owner_name": "www.paypal.com",
+      "present": false,
       "probe_type": "dns",
-      "provenance": {
-        "canonical_name": "www.paypal.com.cdn.cloudflare.net.",
-        "resolver": "8.8.8.8",
-        "resolver_port": 53
-      },
+      "provenance": {},
       "query_name": "www.paypal.com",
-      "record_count": 1,
-      "records": [
-        {
-          "extensions": {
-            "compatible": true
-          },
-          "ignored": false,
-          "mode": "service",
-          "param_details": [
-            {
-              "client_supported": true,
-              "decoded": true,
-              "key": 1,
-              "known": true,
-              "name": "alpn",
-              "raw": "\"h2\"",
-              "registered": true,
-              "registry_reference": "RFC 9460, Section 7.1",
-              "value": [
-                "h2"
-              ]
-            },
-            {
-              "client_supported": true,
-              "decoded": true,
-              "key": 4,
-              "known": true,
-              "name": "ipv4hint",
-              "raw": "\"104.18.6.168,104.18.7.168\"",
-              "registered": true,
-              "registry_reference": "RFC 9460, Section 7.3",
-              "value": [
-                "104.18.6.168",
-                "104.18.7.168"
-              ]
-            }
-          ],
-          "params": {
-            "alpn": [
-              "h2"
-            ],
-            "ipv4hint": [
-              "104.18.6.168",
-              "104.18.7.168"
-            ]
-          },
-          "priority": 1,
-          "raw": "1 . alpn=\"h2\" ipv4hint=\"104.18.6.168,104.18.7.168\"",
-          "target": ".",
-          "ttl": null,
-          "usable": true,
-          "validation_issues": [],
-          "validity": "valid"
-        }
-      ],
-      "resolved_rrsets": [
-        {
-          "canonical_name": "www.paypal.com.cdn.cloudflare.net.",
-          "owner_name": "www.paypal.com.cdn.cloudflare.net.",
-          "probe_type": "dns",
-          "query_name": "www.paypal.com",
-          "record_type": "HTTPS",
-          "records": [
-            {
-              "compatible": true,
-              "ignored": false,
-              "mode": "service",
-              "param_details": [
-                {
-                  "client_supported": true,
-                  "decoded": true,
-                  "key": 1,
-                  "known": true,
-                  "name": "alpn",
-                  "raw": "\"h2\"",
-                  "registered": true,
-                  "registry_reference": "RFC 9460, Section 7.1",
-                  "value": [
-                    "h2"
-                  ]
-                },
-                {
-                  "client_supported": true,
-                  "decoded": true,
-                  "key": 4,
-                  "known": true,
-                  "name": "ipv4hint",
-                  "raw": "\"104.18.6.168,104.18.7.168\"",
-                  "registered": true,
-                  "registry_reference": "RFC 9460, Section 7.3",
-                  "value": [
-                    "104.18.6.168",
-                    "104.18.7.168"
-                  ]
-                }
-              ],
-              "params": {
-                "alpn": [
-                  "h2"
-                ],
-                "ipv4hint": [
-                  "104.18.6.168",
-                  "104.18.7.168"
-                ]
-              },
-              "priority": 1,
-              "raw": "1 . alpn=\"h2\" ipv4hint=\"104.18.6.168,104.18.7.168\"",
-              "target": ".",
-              "usable": true,
-              "validation_issues": [],
-              "validity": "valid"
-            }
-          ],
-          "resolver": "8.8.8.8",
-          "resolver_port": 53,
-          "rrset_owner_name": "www.paypal.com.cdn.cloudflare.net.",
-          "ttl": 300,
-          "validation_issues": [],
-          "validation_status": "valid"
-        }
-      ],
-      "resolver": "8.8.8.8",
-      "resolver_port": 53,
-      "rrset_owner_name": "www.paypal.com.cdn.cloudflare.net.",
-      "rrset_validation": {
-        "alias_mode": false,
-        "issues": [],
-        "record_count": 1,
-        "service_mode": true,
-        "status": "valid",
-        "usable_record_count": 1
-      },
+      "record_count": 0,
+      "records": [],
+      "resolved_rrsets": [],
+      "resolver": null,
+      "resolver_port": null,
+      "rrset_owner_name": null,
       "rrtype": "HTTPS",
       "schema_version": 2,
-      "status": "present",
-      "ttl": 300,
+      "status": "absent",
+      "ttl": null,
       "validation": {
         "issues": [],
-        "status": "valid"
+        "status": "not_applicable"
       },
       "variant": "www"
     },
@@ -12305,7 +12116,7 @@
           "resolver": "8.8.8.8",
           "resolver_port": 53,
           "rrset_owner_name": "svcb.www.samsung.com.edgekey.net.",
-          "ttl": 191,
+          "ttl": 195,
           "validation_issues": [],
           "validation_status": "valid"
         }
@@ -12324,7 +12135,7 @@
       "rrtype": "HTTPS",
       "schema_version": 2,
       "status": "present",
-      "ttl": 191,
+      "ttl": 195,
       "validation": {
         "issues": [],
         "status": "valid"
@@ -17328,7 +17139,7 @@
           "resolver": "8.8.8.8",
           "resolver_port": 53,
           "rrset_owner_name": "www.youtube.com.",
-          "ttl": 3600,
+          "ttl": 2456,
           "validation_issues": [],
           "validation_status": "valid"
         }
@@ -17347,7 +17158,7 @@
       "rrtype": "HTTPS",
       "schema_version": 2,
       "status": "present",
-      "ttl": 3600,
+      "ttl": 2456,
       "validation": {
         "issues": [],
         "status": "valid"
@@ -17609,7 +17420,7 @@
     }
   ],
   "scan": {
-    "completed_at": "2026-07-09T23:11:37Z",
+    "completed_at": "2026-07-10T03:30:57Z",
     "configured_resolvers": [
       "1.1.1.1",
       "208.67.222.222",
@@ -17621,7 +17432,7 @@
         "dns"
       ],
       "software": {
-        "commit": "d2dbc676726e9d1f6fe78556c017bfd02ba29391",
+        "commit": "b833b2e3502ec1b84b63b4191726783d4bec7e37",
         "dnspython": "2.8.0",
         "name": "rfc9460-checker",
         "python": "3.14.6",
@@ -17636,7 +17447,7 @@
       },
       "validator_ruleset_version": "2026-07-09.1"
     },
-    "id": "2026-07-09T23:11:17Z",
+    "id": "2026-07-10T03:30:37Z",
     "observation_count": 202,
     "observed_resolvers": [
       "8.8.8.8"
@@ -17654,19 +17465,19 @@
       },
       "script_version": "2.0.0",
       "software": {
-        "commit": "d2dbc676726e9d1f6fe78556c017bfd02ba29391",
+        "commit": "b833b2e3502ec1b84b63b4191726783d4bec7e37",
         "dnspython": "2.8.0",
         "name": "rfc9460-checker",
         "python": "3.14.6",
         "version": "2.0.0"
       },
-      "source_commit": "d2dbc676726e9d1f6fe78556c017bfd02ba29391",
+      "source_commit": "b833b2e3502ec1b84b63b4191726783d4bec7e37",
       "validator_ruleset": "2026-07-09.1"
     },
     "resolvers": [
       "8.8.8.8"
     ],
-    "started_at": "2026-07-09T23:11:17Z"
+    "started_at": "2026-07-10T03:30:37Z"
   },
   "schema_version": 2
 }
