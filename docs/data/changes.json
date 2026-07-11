@@ -1,17 +1,15 @@
 {
   "changed": [],
-  "comparable": false,
-  "from_scan": "2026-07-10T03:30:37Z",
+  "comparable": true,
+  "from_scan": "2026-07-10T21:55:28Z",
   "gained": [],
-  "generated_at": "2026-07-10T21:55:48Z",
+  "generated_at": "2026-07-11T02:47:03Z",
   "lost": [],
-  "reason": "The previous detailed scan lacks wire-decoder provenance. This scan establishes the raw-wire evidence baseline, so per-name deployment changes are not comparable; comparison resumes with the next wire-enabled scan.",
-  "reason_code": "wire_decoder_baseline",
   "schema_version": 2,
   "summary": {
     "changed": 0,
     "gained": 0,
     "lost": 0
   },
-  "to_scan": "2026-07-10T21:55:28Z"
+  "to_scan": "2026-07-11T02:46:43Z"
 }
