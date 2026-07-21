@@ -53993,8 +53993,179 @@
       "scan_date": "2026-07-20T03:21:07Z",
       "scan_id": "2026-07-20T03:20:47Z",
       "schema_version": 2
+    },
+    {
+      "cohort": {
+        "count": 101,
+        "id": "sha256:7b7854adb6eaa7d3",
+        "source": "Similarweb/Semrush rankings - December 2024",
+        "updated_at": "2024-12-15"
+      },
+      "details_available": true,
+      "metrics": {
+        "adoption": {
+          "https": {
+            "count": 29,
+            "denominator": 202,
+            "percentage": 14.36
+          },
+          "https_count": 29,
+          "overall_adoption": 14.36,
+          "root_adoption": 7.92,
+          "root_https": {
+            "count": 8,
+            "denominator": 101,
+            "percentage": 7.92
+          },
+          "svcb": {
+            "count": 0,
+            "denominator": 0,
+            "percentage": 0.0
+          },
+          "svcb_adoption": 0.0,
+          "svcb_count": 0,
+          "www_adoption": 20.79,
+          "www_https": {
+            "count": 21,
+            "denominator": 101,
+            "percentage": 20.79
+          }
+        },
+        "compatibility": {
+          "deprecated_feature_aliases": {
+            "ech_deployment": "ech_advertised",
+            "http3_support": "h3_advertised"
+          }
+        },
+        "denominators": {
+          "domains": 101,
+          "https_names": 202,
+          "https_observations": 202,
+          "https_present_rrsets": 29,
+          "observations": 202,
+          "queried_names": 202,
+          "root_https_names": 101,
+          "svcb_names": 0,
+          "svcb_observations": 0,
+          "svcb_present_rrsets": 0,
+          "usable_https_rrsets": 29,
+          "usable_svcb_rrsets": 0,
+          "www_https_names": 101
+        },
+        "features": {
+          "alpn_advertised": {
+            "count": 27,
+            "denominator": 29,
+            "percentage": 93.1
+          },
+          "custom_port": {
+            "count": 0,
+            "denominator": 29,
+            "percentage": 0.0
+          },
+          "ech_advertised": {
+            "count": 0,
+            "denominator": 29,
+            "percentage": 0.0
+          },
+          "h3_advertised": {
+            "count": 17,
+            "denominator": 29,
+            "percentage": 58.62
+          },
+          "ipv4_hints": {
+            "count": 12,
+            "denominator": 29,
+            "percentage": 41.38
+          },
+          "ipv6_hints": {
+            "count": 6,
+            "denominator": 29,
+            "percentage": 20.69
+          },
+          "no_default_alpn": {
+            "count": 0,
+            "denominator": 29,
+            "percentage": 0.0
+          }
+        },
+        "validity": {
+          "https": {
+            "invalid": {
+              "count": 0,
+              "denominator": 29,
+              "percentage": 0.0
+            },
+            "present": 29,
+            "unknown": {
+              "count": 0,
+              "denominator": 29,
+              "percentage": 0.0
+            },
+            "valid": {
+              "count": 29,
+              "denominator": 29,
+              "percentage": 100.0
+            },
+            "valid_but_incompatible": {
+              "count": 0,
+              "denominator": 29,
+              "percentage": 0.0
+            }
+          },
+          "overall": {
+            "invalid": {
+              "count": 0,
+              "denominator": 29,
+              "percentage": 0.0
+            },
+            "present": 29,
+            "unknown": {
+              "count": 0,
+              "denominator": 29,
+              "percentage": 0.0
+            },
+            "valid": {
+              "count": 29,
+              "denominator": 29,
+              "percentage": 100.0
+            },
+            "valid_but_incompatible": {
+              "count": 0,
+              "denominator": 29,
+              "percentage": 0.0
+            }
+          },
+          "svcb": {
+            "invalid": {
+              "count": 0,
+              "denominator": 0,
+              "percentage": 0.0
+            },
+            "present": 0,
+            "unknown": {
+              "count": 0,
+              "denominator": 0,
+              "percentage": 0.0
+            },
+            "valid": {
+              "count": 0,
+              "denominator": 0,
+              "percentage": 0.0
+            },
+            "valid_but_incompatible": {
+              "count": 0,
+              "denominator": 0,
+              "percentage": 0.0
+            }
+          }
+        }
+      },
+      "scan_date": "2026-07-21T02:49:26Z",
+      "scan_id": "2026-07-21T02:49:06Z",
+      "schema_version": 2
     }
   ],
-  "generated_at": "2026-07-20T03:21:07Z",
+  "generated_at": "2026-07-21T02:49:26Z",
   "schema_version": 2
 }
