@@ -1,10 +1,12 @@
 {
   "changed": [],
   "comparable": true,
-  "from_scan": "2026-09-01T04:04:30Z",
-  "gained": [
+  "from_scan": "2026-09-02T03:26:29Z",
+  "gained": [],
+  "generated_at": "2026-09-03T03:28:25Z",
+  "lost": [
     {
-      "after": {
+      "before": {
         "alias_chain": [],
         "alias_resolution_status": "not_applicable",
         "effective_records": [
@@ -240,13 +242,11 @@
       "variant": "www"
     }
   ],
-  "generated_at": "2026-09-02T03:26:49Z",
-  "lost": [],
   "schema_version": 2,
   "summary": {
     "changed": 0,
-    "gained": 1,
-    "lost": 0
+    "gained": 0,
+    "lost": 1
   },
-  "to_scan": "2026-09-02T03:26:29Z"
+  "to_scan": "2026-09-03T03:28:04Z"
 }
