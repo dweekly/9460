@@ -72,13 +72,13 @@ def test_default_snapshot_preserves_hash_entries_and_special_ranges() -> None:
     """Load the pinned snapshot without losing any registry data."""
     snapshot = registry_codegen.load_snapshot()
 
-    assert len(snapshot.payload) == 1264
+    assert len(snapshot.payload) == 1276
     assert hashlib.sha256(snapshot.payload).hexdigest() == (
-        "2a1695a17ab72f36585d166efb9eda2c911d547158a8963adf7914df74de9231"
+        "524869acd538a7af1daae75ffb95f64079442bc02aea2ab4ca696aabd73f9393"
     )
     assert [entry.key for entry in snapshot.entries] == list(range(13))
     assert snapshot.entries[5].name == "ech"
-    assert snapshot.entries[5].reference == "[RFC9848]"
+    assert snapshot.entries[5].reference == "[RFC 9848]"
     assert snapshot.entries[12].name == "oots"
     assert snapshot.entries[12].meaning == (
         "Per-transport operator confidence in serving the \n"
