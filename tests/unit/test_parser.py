@@ -188,9 +188,9 @@ class TestParseHttpsRecord:
         assert not set(range(7, 13)).intersection(CLIENT_SUPPORTED_PARAM_KEYS)
         assert param_key_name(9) == "tls-supported-groups"
         assert SVCPARAM_REGISTRY_METADATA["version"] == "2026-06-25"
-        assert SVCPARAM_REGISTRY_METADATA["snapshot_date"] == "2026-07-10"
+        assert SVCPARAM_REGISTRY_METADATA["snapshot_date"] == "2026-11-03"
         assert SVCPARAM_REGISTRY_METADATA["content_sha256"] == (
-            "2a1695a17ab72f36585d166efb9eda2c911d547158a8963adf7914df74de9231"
+            "524869acd538a7af1daae75ffb95f64079442bc02aea2ab4ca696aabd73f9393"
         )
         assert result["validator_ruleset_version"] == VALIDATOR_RULESET_VERSION
         detail = next(item for item in result["records"][0]["param_details"] if item["key"] == 9)

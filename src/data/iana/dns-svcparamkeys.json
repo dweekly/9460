@@ -5,9 +5,9 @@
   "registry_page_url": "https://www.iana.org/assignments/dns-svcb/dns-svcb.xhtml",
   "csv_url": "https://www.iana.org/assignments/dns-svcb/dns-svcparamkeys.csv",
   "iana_last_updated": "2026-06-25",
-  "retrieved_at": "2026-07-10",
-  "payload_file": "dns-svcparamkeys-2026-06-25.csv.b64",
+  "retrieved_at": "2026-11-03",
+  "payload_file": "dns-svcparamkeys-2026-06-25-retrieved-2026-11-03.csv.b64",
   "payload_encoding": "base64",
-  "payload_length": 1264,
-  "payload_sha256": "2a1695a17ab72f36585d166efb9eda2c911d547158a8963adf7914df74de9231"
+  "payload_length": 1276,
+  "payload_sha256": "524869acd538a7af1daae75ffb95f64079442bc02aea2ab4ca696aabd73f9393"
 }
