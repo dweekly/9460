@@ -1,7 +1,5 @@
 """Focused tests for deterministic IANA SvcParamKey registry generation."""
 
-from __future__ import annotations
-
 import base64
 import csv
 import hashlib

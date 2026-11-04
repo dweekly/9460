@@ -5,8 +5,6 @@ read-only comparison with IANA; it never rewrites the snapshot or generated
 module.
 """
 
-from __future__ import annotations
-
 import argparse
 import base64
 import binascii
