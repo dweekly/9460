@@ -112,15 +112,25 @@ def _answer(message: bytes) -> dns.resolver.Answer:
 
 
 def test_raw_duplicate_key_overrides_dnspython_normalization() -> None:
-    """Strict wire evidence overrides a lossy accepted object model."""
+    """Strict wire evidence rejects duplicate keys whatever dnspython does with them.
+
+    dnspython 2.8 accepts the message and silently keeps only the final
+    duplicate; 2.9 rejects the message, which sends production through
+    pre-parser recovery. Either way the record must retain both occurrences
+    and the entire RRset must be invalid.
+    """
     rdata = b"\x00\x01\x00" + _param(1, b"\x02h2") + _param(1, b"\x02h3")
     message = _response(rdata)
-    answer = _answer(message)
-
-    # dnspython silently retains only the final duplicate; the strict record
-    # must retain both occurrences and reject the entire RRset.
-    assert len(answer[0].params) == 1
-    parsed = parse_https_record(answer, owner_name="example.com")
+    try:
+        answer = _answer(message)
+    except dns.exception.FormError as error:
+        error._rfc9460_wire_captures = [DNSWireCapture("udp", PEER, message, query_wire=_query())]
+        parsed = parse_captured_response(error, "HTTPS", "example.com")
+        accepted_by_dnspython = False
+    else:
+        assert len(answer[0].params) == 1
+        parsed = parse_https_record(answer, owner_name="example.com")
+        accepted_by_dnspython = True
 
     assert parsed["validation_status"] == "invalid"
     assert parsed["wire_validation"]["status"] == "failed"
@@ -131,7 +141,7 @@ def test_raw_duplicate_key_overrides_dnspython_normalization() -> None:
     assert "duplicate_svcparam_key" in {issue["code"] for issue in parsed["validation_issues"]}
     response = parsed["wire_capture"]["responses"][0]
     assert response["used_for_observation"] is True
-    assert response["accepted_by_dnspython"] is True
+    assert response["accepted_by_dnspython"] is accepted_by_dnspython
     assert response["message"]["length"] == len(message)
 
 

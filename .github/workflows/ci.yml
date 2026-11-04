@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Scan commits are pushed with GITHUB_TOKEN, which never triggers push
+  # workflows, so without a schedule main's CI can go months without running
+  # while the unpinned dependency minimums float forward under it.
+  schedule:
+    - cron: '41 8 * * 1'
   workflow_dispatch:
 
 permissions:
