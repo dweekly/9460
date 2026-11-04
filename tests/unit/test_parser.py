@@ -100,10 +100,13 @@ class TestParseHttpsRecord:
 
     def test_parse_real_complete_rrset(self) -> None:
         """Known and unknown parameters remain JSON-safe in a full RRset."""
+        # dnspython 2.9+ checks ECHConfigList framing (at least six octets and a
+        # matching uint16 length prefix), so the fixture is a framed list holding
+        # one zero-length ECHConfig. Its contents are not a usable ECHConfig.
         answers = [
             https_rdata(
                 '1 . alpn="h3,h2" no-default-alpn port="8443" '
-                'ipv4hint="192.0.2.1,192.0.2.2" ech="AAEC" '
+                'ipv4hint="192.0.2.1,192.0.2.2" ech="AAT+DQAA" '
                 'ipv6hint="2001:db8::1"'
             ),
             https_rdata('2 backup.example. alpn="h2" key65400="opaque"'),
@@ -121,7 +124,7 @@ class TestParseHttpsRecord:
         assert first["params"]["no-default-alpn"] is True
         assert first["params"]["port"] == 8443
         assert first["params"]["ipv4hint"] == ["192.0.2.1", "192.0.2.2"]
-        assert first["params"]["ech"] == {"encoding": "base64", "value": "AAEC"}
+        assert first["params"]["ech"] == {"encoding": "base64", "value": "AAT+DQAA"}
         assert first["params"]["ipv6hint"] == ["2001:db8::1"]
         assert first["raw"].startswith("1 .")
         assert second["params"]["key65400"] == {

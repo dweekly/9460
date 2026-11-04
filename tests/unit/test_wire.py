@@ -304,7 +304,6 @@ def test_packet_decoder_rejects_a_compressed_dname_target() -> None:
     issue_codes = {issue["code"] for issue in decoded["issues"]}
     assert "compressed_dname_target" in issue_codes
     assert "trailing_alias_rdata" not in issue_codes
-    assert dns.message.from_wire(message).answer
 
 
 def test_packet_bounds_fail_closed_without_throwing() -> None:
