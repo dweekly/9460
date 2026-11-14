@@ -1,8 +1,5 @@
 {
-  "changed": [],
-  "comparable": true,
-  "from_scan": "2026-11-12T06:12:52Z",
-  "gained": [
+  "changed": [
     {
       "after": {
         "alias_chain": [],
@@ -33,18 +30,64 @@
                   "h3",
                   "h2"
                 ]
+              },
+              {
+                "client_supported": true,
+                "decoded": true,
+                "key": 4,
+                "known": true,
+                "name": "ipv4hint",
+                "raw": {
+                  "encoding": "base64",
+                  "length": 8,
+                  "sha256": "ba9fb6d7bf7812445531e57651f5bebe2377d7c30c1c7d179ffb767bb3819a70",
+                  "value": "aBIQBWgSEQU="
+                },
+                "registered": true,
+                "registry_reference": "RFC 9460, Section 7.3",
+                "value": [
+                  "104.18.16.5",
+                  "104.18.17.5"
+                ]
+              },
+              {
+                "client_supported": true,
+                "decoded": true,
+                "key": 6,
+                "known": true,
+                "name": "ipv6hint",
+                "raw": {
+                  "encoding": "base64",
+                  "length": 32,
+                  "sha256": "7403a9f71d1f10ea722d38f2501addba1f3018acd89d28bc402daccb4ad09a48",
+                  "value": "JgZHAAAAAAAAAAAAaBIQBSYGRwAAAAAAAAAAAGgSEQU="
+                },
+                "registered": true,
+                "registry_reference": "RFC 9460, Section 7.3",
+                "value": [
+                  "2606:4700::6812:1005",
+                  "2606:4700::6812:1105"
+                ]
               }
             ],
             "params": {
               "alpn": [
                 "h3",
                 "h2"
+              ],
+              "ipv4hint": [
+                "104.18.16.5",
+                "104.18.17.5"
+              ],
+              "ipv6hint": [
+                "2606:4700::6812:1005",
+                "2606:4700::6812:1105"
               ]
             },
-            "presentation": "1 . alpn=\"h3,h2\"",
+            "presentation": "1 . alpn=\"h3,h2\" ipv4hint=\"104.18.16.5,104.18.17.5\" ipv6hint=\"2606:4700::6812:1005,2606:4700::6812:1105\"",
             "priority": 1,
-            "raw": "1 . alpn=\"h3,h2\"",
-            "rdata_sha256": "0295de225718056658f376372d8e080bcadc330bacc87fd21dda33fa1c95113a",
+            "raw": "1 . alpn=\"h3,h2\" ipv4hint=\"104.18.16.5,104.18.17.5\" ipv6hint=\"2606:4700::6812:1005,2606:4700::6812:1105\"",
+            "rdata_sha256": "3c85599659a194fd2e8ed991a8fb801b04a61fb5a3b9bdf4bdb1236687280a68",
             "target": ".",
             "ttl": null,
             "usable": true,
@@ -61,8 +104,14 @@
           "custom_port": false,
           "ech_advertised": false,
           "h3_advertised": true,
-          "ipv4_hints": [],
-          "ipv6_hints": [],
+          "ipv4_hints": [
+            "104.18.16.5",
+            "104.18.17.5"
+          ],
+          "ipv6_hints": [
+            "2606:4700::6812:1005",
+            "2606:4700::6812:1105"
+          ],
           "no_default_alpn": false,
           "ports": []
         },
@@ -93,18 +142,64 @@
                   "h3",
                   "h2"
                 ]
+              },
+              {
+                "client_supported": true,
+                "decoded": true,
+                "key": 4,
+                "known": true,
+                "name": "ipv4hint",
+                "raw": {
+                  "encoding": "base64",
+                  "length": 8,
+                  "sha256": "ba9fb6d7bf7812445531e57651f5bebe2377d7c30c1c7d179ffb767bb3819a70",
+                  "value": "aBIQBWgSEQU="
+                },
+                "registered": true,
+                "registry_reference": "RFC 9460, Section 7.3",
+                "value": [
+                  "104.18.16.5",
+                  "104.18.17.5"
+                ]
+              },
+              {
+                "client_supported": true,
+                "decoded": true,
+                "key": 6,
+                "known": true,
+                "name": "ipv6hint",
+                "raw": {
+                  "encoding": "base64",
+                  "length": 32,
+                  "sha256": "7403a9f71d1f10ea722d38f2501addba1f3018acd89d28bc402daccb4ad09a48",
+                  "value": "JgZHAAAAAAAAAAAAaBIQBSYGRwAAAAAAAAAAAGgSEQU="
+                },
+                "registered": true,
+                "registry_reference": "RFC 9460, Section 7.3",
+                "value": [
+                  "2606:4700::6812:1005",
+                  "2606:4700::6812:1105"
+                ]
               }
             ],
             "params": {
               "alpn": [
                 "h3",
                 "h2"
+              ],
+              "ipv4hint": [
+                "104.18.16.5",
+                "104.18.17.5"
+              ],
+              "ipv6hint": [
+                "2606:4700::6812:1005",
+                "2606:4700::6812:1105"
               ]
             },
-            "presentation": "1 . alpn=\"h3,h2\"",
+            "presentation": "1 . alpn=\"h3,h2\" ipv4hint=\"104.18.16.5,104.18.17.5\" ipv6hint=\"2606:4700::6812:1005,2606:4700::6812:1105\"",
             "priority": 1,
-            "raw": "1 . alpn=\"h3,h2\"",
-            "rdata_sha256": "0295de225718056658f376372d8e080bcadc330bacc87fd21dda33fa1c95113a",
+            "raw": "1 . alpn=\"h3,h2\" ipv4hint=\"104.18.16.5,104.18.17.5\" ipv6hint=\"2606:4700::6812:1005,2606:4700::6812:1105\"",
+            "rdata_sha256": "3c85599659a194fd2e8ed991a8fb801b04a61fb5a3b9bdf4bdb1236687280a68",
             "target": ".",
             "ttl": null,
             "usable": true,
@@ -114,7 +209,7 @@
         ],
         "resolved_rrsets": [
           {
-            "owner_name": "ipv4.global.airbnb-web.production.airbnb.edgekey.net.",
+            "owner_name": "techcrunch.com.",
             "record_type": "HTTPS",
             "records": [
               {
@@ -140,18 +235,64 @@
                       "h3",
                       "h2"
                     ]
+                  },
+                  {
+                    "client_supported": true,
+                    "decoded": true,
+                    "key": 4,
+                    "known": true,
+                    "name": "ipv4hint",
+                    "raw": {
+                      "encoding": "base64",
+                      "length": 8,
+                      "sha256": "ba9fb6d7bf7812445531e57651f5bebe2377d7c30c1c7d179ffb767bb3819a70",
+                      "value": "aBIQBWgSEQU="
+                    },
+                    "registered": true,
+                    "registry_reference": "RFC 9460, Section 7.3",
+                    "value": [
+                      "104.18.16.5",
+                      "104.18.17.5"
+                    ]
+                  },
+                  {
+                    "client_supported": true,
+                    "decoded": true,
+                    "key": 6,
+                    "known": true,
+                    "name": "ipv6hint",
+                    "raw": {
+                      "encoding": "base64",
+                      "length": 32,
+                      "sha256": "7403a9f71d1f10ea722d38f2501addba1f3018acd89d28bc402daccb4ad09a48",
+                      "value": "JgZHAAAAAAAAAAAAaBIQBSYGRwAAAAAAAAAAAGgSEQU="
+                    },
+                    "registered": true,
+                    "registry_reference": "RFC 9460, Section 7.3",
+                    "value": [
+                      "2606:4700::6812:1005",
+                      "2606:4700::6812:1105"
+                    ]
                   }
                 ],
                 "params": {
                   "alpn": [
                     "h3",
                     "h2"
+                  ],
+                  "ipv4hint": [
+                    "104.18.16.5",
+                    "104.18.17.5"
+                  ],
+                  "ipv6hint": [
+                    "2606:4700::6812:1005",
+                    "2606:4700::6812:1105"
                   ]
                 },
-                "presentation": "1 . alpn=\"h3,h2\"",
+                "presentation": "1 . alpn=\"h3,h2\" ipv4hint=\"104.18.16.5,104.18.17.5\" ipv6hint=\"2606:4700::6812:1005,2606:4700::6812:1105\"",
                 "priority": 1,
-                "raw": "1 . alpn=\"h3,h2\"",
-                "rdata_sha256": "0295de225718056658f376372d8e080bcadc330bacc87fd21dda33fa1c95113a",
+                "raw": "1 . alpn=\"h3,h2\" ipv4hint=\"104.18.16.5,104.18.17.5\" ipv6hint=\"2606:4700::6812:1005,2606:4700::6812:1105\"",
+                "rdata_sha256": "3c85599659a194fd2e8ed991a8fb801b04a61fb5a3b9bdf4bdb1236687280a68",
                 "target": ".",
                 "usable": true,
                 "validation_issues": [],
@@ -168,20 +309,952 @@
           "status": "valid"
         }
       },
-      "domain": "airbnb.com",
-      "name": "www.airbnb.com",
+      "before": {
+        "alias_chain": [],
+        "alias_resolution_status": "not_applicable",
+        "effective_records": [
+          {
+            "extensions": {
+              "compatible": true
+            },
+            "ignored": false,
+            "mode": "service",
+            "param_details": [
+              {
+                "client_supported": true,
+                "decoded": true,
+                "key": 1,
+                "known": true,
+                "name": "alpn",
+                "raw": {
+                  "encoding": "base64",
+                  "length": 3,
+                  "sha256": "7f0fe98d16484822506d6ad03b3cb6a7e04d2a6c33bb14ad28dd1dae9f86d4e3",
+                  "value": "Amgy"
+                },
+                "registered": true,
+                "registry_reference": "RFC 9460, Section 7.1",
+                "value": [
+                  "h2"
+                ]
+              },
+              {
+                "client_supported": true,
+                "decoded": true,
+                "key": 4,
+                "known": true,
+                "name": "ipv4hint",
+                "raw": {
+                  "encoding": "base64",
+                  "length": 8,
+                  "sha256": "ba9fb6d7bf7812445531e57651f5bebe2377d7c30c1c7d179ffb767bb3819a70",
+                  "value": "aBIQBWgSEQU="
+                },
+                "registered": true,
+                "registry_reference": "RFC 9460, Section 7.3",
+                "value": [
+                  "104.18.16.5",
+                  "104.18.17.5"
+                ]
+              },
+              {
+                "client_supported": true,
+                "decoded": true,
+                "key": 6,
+                "known": true,
+                "name": "ipv6hint",
+                "raw": {
+                  "encoding": "base64",
+                  "length": 32,
+                  "sha256": "7403a9f71d1f10ea722d38f2501addba1f3018acd89d28bc402daccb4ad09a48",
+                  "value": "JgZHAAAAAAAAAAAAaBIQBSYGRwAAAAAAAAAAAGgSEQU="
+                },
+                "registered": true,
+                "registry_reference": "RFC 9460, Section 7.3",
+                "value": [
+                  "2606:4700::6812:1005",
+                  "2606:4700::6812:1105"
+                ]
+              }
+            ],
+            "params": {
+              "alpn": [
+                "h2"
+              ],
+              "ipv4hint": [
+                "104.18.16.5",
+                "104.18.17.5"
+              ],
+              "ipv6hint": [
+                "2606:4700::6812:1005",
+                "2606:4700::6812:1105"
+              ]
+            },
+            "presentation": "1 . alpn=\"h2\" ipv4hint=\"104.18.16.5,104.18.17.5\" ipv6hint=\"2606:4700::6812:1005,2606:4700::6812:1105\"",
+            "priority": 1,
+            "raw": "1 . alpn=\"h2\" ipv4hint=\"104.18.16.5,104.18.17.5\" ipv6hint=\"2606:4700::6812:1005,2606:4700::6812:1105\"",
+            "rdata_sha256": "f87db53cb8a20005a759d0ce47809c06311920ec25cbf29d07289a18aaeaf47f",
+            "target": ".",
+            "ttl": null,
+            "usable": true,
+            "validation_issues": [],
+            "validity": "valid"
+          }
+        ],
+        "effective_validation_status": "valid",
+        "features": {
+          "alpn": [
+            "h2"
+          ],
+          "custom_port": false,
+          "ech_advertised": false,
+          "h3_advertised": false,
+          "ipv4_hints": [
+            "104.18.16.5",
+            "104.18.17.5"
+          ],
+          "ipv6_hints": [
+            "2606:4700::6812:1005",
+            "2606:4700::6812:1105"
+          ],
+          "no_default_alpn": false,
+          "ports": []
+        },
+        "present": true,
+        "records": [
+          {
+            "extensions": {
+              "compatible": true
+            },
+            "ignored": false,
+            "mode": "service",
+            "param_details": [
+              {
+                "client_supported": true,
+                "decoded": true,
+                "key": 1,
+                "known": true,
+                "name": "alpn",
+                "raw": {
+                  "encoding": "base64",
+                  "length": 3,
+                  "sha256": "7f0fe98d16484822506d6ad03b3cb6a7e04d2a6c33bb14ad28dd1dae9f86d4e3",
+                  "value": "Amgy"
+                },
+                "registered": true,
+                "registry_reference": "RFC 9460, Section 7.1",
+                "value": [
+                  "h2"
+                ]
+              },
+              {
+                "client_supported": true,
+                "decoded": true,
+                "key": 4,
+                "known": true,
+                "name": "ipv4hint",
+                "raw": {
+                  "encoding": "base64",
+                  "length": 8,
+                  "sha256": "ba9fb6d7bf7812445531e57651f5bebe2377d7c30c1c7d179ffb767bb3819a70",
+                  "value": "aBIQBWgSEQU="
+                },
+                "registered": true,
+                "registry_reference": "RFC 9460, Section 7.3",
+                "value": [
+                  "104.18.16.5",
+                  "104.18.17.5"
+                ]
+              },
+              {
+                "client_supported": true,
+                "decoded": true,
+                "key": 6,
+                "known": true,
+                "name": "ipv6hint",
+                "raw": {
+                  "encoding": "base64",
+                  "length": 32,
+                  "sha256": "7403a9f71d1f10ea722d38f2501addba1f3018acd89d28bc402daccb4ad09a48",
+                  "value": "JgZHAAAAAAAAAAAAaBIQBSYGRwAAAAAAAAAAAGgSEQU="
+                },
+                "registered": true,
+                "registry_reference": "RFC 9460, Section 7.3",
+                "value": [
+                  "2606:4700::6812:1005",
+                  "2606:4700::6812:1105"
+                ]
+              }
+            ],
+            "params": {
+              "alpn": [
+                "h2"
+              ],
+              "ipv4hint": [
+                "104.18.16.5",
+                "104.18.17.5"
+              ],
+              "ipv6hint": [
+                "2606:4700::6812:1005",
+                "2606:4700::6812:1105"
+              ]
+            },
+            "presentation": "1 . alpn=\"h2\" ipv4hint=\"104.18.16.5,104.18.17.5\" ipv6hint=\"2606:4700::6812:1005,2606:4700::6812:1105\"",
+            "priority": 1,
+            "raw": "1 . alpn=\"h2\" ipv4hint=\"104.18.16.5,104.18.17.5\" ipv6hint=\"2606:4700::6812:1005,2606:4700::6812:1105\"",
+            "rdata_sha256": "f87db53cb8a20005a759d0ce47809c06311920ec25cbf29d07289a18aaeaf47f",
+            "target": ".",
+            "ttl": null,
+            "usable": true,
+            "validation_issues": [],
+            "validity": "valid"
+          }
+        ],
+        "resolved_rrsets": [
+          {
+            "owner_name": "techcrunch.com.",
+            "record_type": "HTTPS",
+            "records": [
+              {
+                "compatible": true,
+                "ignored": false,
+                "mode": "service",
+                "param_details": [
+                  {
+                    "client_supported": true,
+                    "decoded": true,
+                    "key": 1,
+                    "known": true,
+                    "name": "alpn",
+                    "raw": {
+                      "encoding": "base64",
+                      "length": 3,
+                      "sha256": "7f0fe98d16484822506d6ad03b3cb6a7e04d2a6c33bb14ad28dd1dae9f86d4e3",
+                      "value": "Amgy"
+                    },
+                    "registered": true,
+                    "registry_reference": "RFC 9460, Section 7.1",
+                    "value": [
+                      "h2"
+                    ]
+                  },
+                  {
+                    "client_supported": true,
+                    "decoded": true,
+                    "key": 4,
+                    "known": true,
+                    "name": "ipv4hint",
+                    "raw": {
+                      "encoding": "base64",
+                      "length": 8,
+                      "sha256": "ba9fb6d7bf7812445531e57651f5bebe2377d7c30c1c7d179ffb767bb3819a70",
+                      "value": "aBIQBWgSEQU="
+                    },
+                    "registered": true,
+                    "registry_reference": "RFC 9460, Section 7.3",
+                    "value": [
+                      "104.18.16.5",
+                      "104.18.17.5"
+                    ]
+                  },
+                  {
+                    "client_supported": true,
+                    "decoded": true,
+                    "key": 6,
+                    "known": true,
+                    "name": "ipv6hint",
+                    "raw": {
+                      "encoding": "base64",
+                      "length": 32,
+                      "sha256": "7403a9f71d1f10ea722d38f2501addba1f3018acd89d28bc402daccb4ad09a48",
+                      "value": "JgZHAAAAAAAAAAAAaBIQBSYGRwAAAAAAAAAAAGgSEQU="
+                    },
+                    "registered": true,
+                    "registry_reference": "RFC 9460, Section 7.3",
+                    "value": [
+                      "2606:4700::6812:1005",
+                      "2606:4700::6812:1105"
+                    ]
+                  }
+                ],
+                "params": {
+                  "alpn": [
+                    "h2"
+                  ],
+                  "ipv4hint": [
+                    "104.18.16.5",
+                    "104.18.17.5"
+                  ],
+                  "ipv6hint": [
+                    "2606:4700::6812:1005",
+                    "2606:4700::6812:1105"
+                  ]
+                },
+                "presentation": "1 . alpn=\"h2\" ipv4hint=\"104.18.16.5,104.18.17.5\" ipv6hint=\"2606:4700::6812:1005,2606:4700::6812:1105\"",
+                "priority": 1,
+                "raw": "1 . alpn=\"h2\" ipv4hint=\"104.18.16.5,104.18.17.5\" ipv6hint=\"2606:4700::6812:1005,2606:4700::6812:1105\"",
+                "rdata_sha256": "f87db53cb8a20005a759d0ce47809c06311920ec25cbf29d07289a18aaeaf47f",
+                "target": ".",
+                "usable": true,
+                "validation_issues": [],
+                "validity": "valid"
+              }
+            ],
+            "validation_issues": [],
+            "validation_status": "valid"
+          }
+        ],
+        "status": "present",
+        "validation": {
+          "issues": [],
+          "status": "valid"
+        }
+      },
+      "domain": "techcrunch.com",
+      "fields": [
+        "records",
+        "features",
+        "effective_records",
+        "resolved_rrsets"
+      ],
+      "name": "techcrunch.com",
+      "probe_type": "dns",
+      "rrtype": "HTTPS",
+      "variant": "root"
+    },
+    {
+      "after": {
+        "alias_chain": [],
+        "alias_resolution_status": "not_applicable",
+        "effective_records": [
+          {
+            "extensions": {
+              "compatible": true
+            },
+            "ignored": false,
+            "mode": "service",
+            "param_details": [
+              {
+                "client_supported": true,
+                "decoded": true,
+                "key": 1,
+                "known": true,
+                "name": "alpn",
+                "raw": {
+                  "encoding": "base64",
+                  "length": 6,
+                  "sha256": "c33b4d5217dac7dfb991c960ed962a8efdafc5cf1457f92fdf5dc25ab77d9ad5",
+                  "value": "AmgzAmgy"
+                },
+                "registered": true,
+                "registry_reference": "RFC 9460, Section 7.1",
+                "value": [
+                  "h3",
+                  "h2"
+                ]
+              },
+              {
+                "client_supported": true,
+                "decoded": true,
+                "key": 4,
+                "known": true,
+                "name": "ipv4hint",
+                "raw": {
+                  "encoding": "base64",
+                  "length": 8,
+                  "sha256": "ba9fb6d7bf7812445531e57651f5bebe2377d7c30c1c7d179ffb767bb3819a70",
+                  "value": "aBIQBWgSEQU="
+                },
+                "registered": true,
+                "registry_reference": "RFC 9460, Section 7.3",
+                "value": [
+                  "104.18.16.5",
+                  "104.18.17.5"
+                ]
+              },
+              {
+                "client_supported": true,
+                "decoded": true,
+                "key": 6,
+                "known": true,
+                "name": "ipv6hint",
+                "raw": {
+                  "encoding": "base64",
+                  "length": 32,
+                  "sha256": "7403a9f71d1f10ea722d38f2501addba1f3018acd89d28bc402daccb4ad09a48",
+                  "value": "JgZHAAAAAAAAAAAAaBIQBSYGRwAAAAAAAAAAAGgSEQU="
+                },
+                "registered": true,
+                "registry_reference": "RFC 9460, Section 7.3",
+                "value": [
+                  "2606:4700::6812:1005",
+                  "2606:4700::6812:1105"
+                ]
+              }
+            ],
+            "params": {
+              "alpn": [
+                "h3",
+                "h2"
+              ],
+              "ipv4hint": [
+                "104.18.16.5",
+                "104.18.17.5"
+              ],
+              "ipv6hint": [
+                "2606:4700::6812:1005",
+                "2606:4700::6812:1105"
+              ]
+            },
+            "presentation": "1 . alpn=\"h3,h2\" ipv4hint=\"104.18.16.5,104.18.17.5\" ipv6hint=\"2606:4700::6812:1005,2606:4700::6812:1105\"",
+            "priority": 1,
+            "raw": "1 . alpn=\"h3,h2\" ipv4hint=\"104.18.16.5,104.18.17.5\" ipv6hint=\"2606:4700::6812:1005,2606:4700::6812:1105\"",
+            "rdata_sha256": "3c85599659a194fd2e8ed991a8fb801b04a61fb5a3b9bdf4bdb1236687280a68",
+            "target": ".",
+            "ttl": null,
+            "usable": true,
+            "validation_issues": [],
+            "validity": "valid"
+          }
+        ],
+        "effective_validation_status": "valid",
+        "features": {
+          "alpn": [
+            "h2",
+            "h3"
+          ],
+          "custom_port": false,
+          "ech_advertised": false,
+          "h3_advertised": true,
+          "ipv4_hints": [
+            "104.18.16.5",
+            "104.18.17.5"
+          ],
+          "ipv6_hints": [
+            "2606:4700::6812:1005",
+            "2606:4700::6812:1105"
+          ],
+          "no_default_alpn": false,
+          "ports": []
+        },
+        "present": true,
+        "records": [
+          {
+            "extensions": {
+              "compatible": true
+            },
+            "ignored": false,
+            "mode": "service",
+            "param_details": [
+              {
+                "client_supported": true,
+                "decoded": true,
+                "key": 1,
+                "known": true,
+                "name": "alpn",
+                "raw": {
+                  "encoding": "base64",
+                  "length": 6,
+                  "sha256": "c33b4d5217dac7dfb991c960ed962a8efdafc5cf1457f92fdf5dc25ab77d9ad5",
+                  "value": "AmgzAmgy"
+                },
+                "registered": true,
+                "registry_reference": "RFC 9460, Section 7.1",
+                "value": [
+                  "h3",
+                  "h2"
+                ]
+              },
+              {
+                "client_supported": true,
+                "decoded": true,
+                "key": 4,
+                "known": true,
+                "name": "ipv4hint",
+                "raw": {
+                  "encoding": "base64",
+                  "length": 8,
+                  "sha256": "ba9fb6d7bf7812445531e57651f5bebe2377d7c30c1c7d179ffb767bb3819a70",
+                  "value": "aBIQBWgSEQU="
+                },
+                "registered": true,
+                "registry_reference": "RFC 9460, Section 7.3",
+                "value": [
+                  "104.18.16.5",
+                  "104.18.17.5"
+                ]
+              },
+              {
+                "client_supported": true,
+                "decoded": true,
+                "key": 6,
+                "known": true,
+                "name": "ipv6hint",
+                "raw": {
+                  "encoding": "base64",
+                  "length": 32,
+                  "sha256": "7403a9f71d1f10ea722d38f2501addba1f3018acd89d28bc402daccb4ad09a48",
+                  "value": "JgZHAAAAAAAAAAAAaBIQBSYGRwAAAAAAAAAAAGgSEQU="
+                },
+                "registered": true,
+                "registry_reference": "RFC 9460, Section 7.3",
+                "value": [
+                  "2606:4700::6812:1005",
+                  "2606:4700::6812:1105"
+                ]
+              }
+            ],
+            "params": {
+              "alpn": [
+                "h3",
+                "h2"
+              ],
+              "ipv4hint": [
+                "104.18.16.5",
+                "104.18.17.5"
+              ],
+              "ipv6hint": [
+                "2606:4700::6812:1005",
+                "2606:4700::6812:1105"
+              ]
+            },
+            "presentation": "1 . alpn=\"h3,h2\" ipv4hint=\"104.18.16.5,104.18.17.5\" ipv6hint=\"2606:4700::6812:1005,2606:4700::6812:1105\"",
+            "priority": 1,
+            "raw": "1 . alpn=\"h3,h2\" ipv4hint=\"104.18.16.5,104.18.17.5\" ipv6hint=\"2606:4700::6812:1005,2606:4700::6812:1105\"",
+            "rdata_sha256": "3c85599659a194fd2e8ed991a8fb801b04a61fb5a3b9bdf4bdb1236687280a68",
+            "target": ".",
+            "ttl": null,
+            "usable": true,
+            "validation_issues": [],
+            "validity": "valid"
+          }
+        ],
+        "resolved_rrsets": [
+          {
+            "owner_name": "www.techcrunch.com.",
+            "record_type": "HTTPS",
+            "records": [
+              {
+                "compatible": true,
+                "ignored": false,
+                "mode": "service",
+                "param_details": [
+                  {
+                    "client_supported": true,
+                    "decoded": true,
+                    "key": 1,
+                    "known": true,
+                    "name": "alpn",
+                    "raw": {
+                      "encoding": "base64",
+                      "length": 6,
+                      "sha256": "c33b4d5217dac7dfb991c960ed962a8efdafc5cf1457f92fdf5dc25ab77d9ad5",
+                      "value": "AmgzAmgy"
+                    },
+                    "registered": true,
+                    "registry_reference": "RFC 9460, Section 7.1",
+                    "value": [
+                      "h3",
+                      "h2"
+                    ]
+                  },
+                  {
+                    "client_supported": true,
+                    "decoded": true,
+                    "key": 4,
+                    "known": true,
+                    "name": "ipv4hint",
+                    "raw": {
+                      "encoding": "base64",
+                      "length": 8,
+                      "sha256": "ba9fb6d7bf7812445531e57651f5bebe2377d7c30c1c7d179ffb767bb3819a70",
+                      "value": "aBIQBWgSEQU="
+                    },
+                    "registered": true,
+                    "registry_reference": "RFC 9460, Section 7.3",
+                    "value": [
+                      "104.18.16.5",
+                      "104.18.17.5"
+                    ]
+                  },
+                  {
+                    "client_supported": true,
+                    "decoded": true,
+                    "key": 6,
+                    "known": true,
+                    "name": "ipv6hint",
+                    "raw": {
+                      "encoding": "base64",
+                      "length": 32,
+                      "sha256": "7403a9f71d1f10ea722d38f2501addba1f3018acd89d28bc402daccb4ad09a48",
+                      "value": "JgZHAAAAAAAAAAAAaBIQBSYGRwAAAAAAAAAAAGgSEQU="
+                    },
+                    "registered": true,
+                    "registry_reference": "RFC 9460, Section 7.3",
+                    "value": [
+                      "2606:4700::6812:1005",
+                      "2606:4700::6812:1105"
+                    ]
+                  }
+                ],
+                "params": {
+                  "alpn": [
+                    "h3",
+                    "h2"
+                  ],
+                  "ipv4hint": [
+                    "104.18.16.5",
+                    "104.18.17.5"
+                  ],
+                  "ipv6hint": [
+                    "2606:4700::6812:1005",
+                    "2606:4700::6812:1105"
+                  ]
+                },
+                "presentation": "1 . alpn=\"h3,h2\" ipv4hint=\"104.18.16.5,104.18.17.5\" ipv6hint=\"2606:4700::6812:1005,2606:4700::6812:1105\"",
+                "priority": 1,
+                "raw": "1 . alpn=\"h3,h2\" ipv4hint=\"104.18.16.5,104.18.17.5\" ipv6hint=\"2606:4700::6812:1005,2606:4700::6812:1105\"",
+                "rdata_sha256": "3c85599659a194fd2e8ed991a8fb801b04a61fb5a3b9bdf4bdb1236687280a68",
+                "target": ".",
+                "usable": true,
+                "validation_issues": [],
+                "validity": "valid"
+              }
+            ],
+            "validation_issues": [],
+            "validation_status": "valid"
+          }
+        ],
+        "status": "present",
+        "validation": {
+          "issues": [],
+          "status": "valid"
+        }
+      },
+      "before": {
+        "alias_chain": [],
+        "alias_resolution_status": "not_applicable",
+        "effective_records": [
+          {
+            "extensions": {
+              "compatible": true
+            },
+            "ignored": false,
+            "mode": "service",
+            "param_details": [
+              {
+                "client_supported": true,
+                "decoded": true,
+                "key": 1,
+                "known": true,
+                "name": "alpn",
+                "raw": {
+                  "encoding": "base64",
+                  "length": 3,
+                  "sha256": "7f0fe98d16484822506d6ad03b3cb6a7e04d2a6c33bb14ad28dd1dae9f86d4e3",
+                  "value": "Amgy"
+                },
+                "registered": true,
+                "registry_reference": "RFC 9460, Section 7.1",
+                "value": [
+                  "h2"
+                ]
+              },
+              {
+                "client_supported": true,
+                "decoded": true,
+                "key": 4,
+                "known": true,
+                "name": "ipv4hint",
+                "raw": {
+                  "encoding": "base64",
+                  "length": 8,
+                  "sha256": "ba9fb6d7bf7812445531e57651f5bebe2377d7c30c1c7d179ffb767bb3819a70",
+                  "value": "aBIQBWgSEQU="
+                },
+                "registered": true,
+                "registry_reference": "RFC 9460, Section 7.3",
+                "value": [
+                  "104.18.16.5",
+                  "104.18.17.5"
+                ]
+              },
+              {
+                "client_supported": true,
+                "decoded": true,
+                "key": 6,
+                "known": true,
+                "name": "ipv6hint",
+                "raw": {
+                  "encoding": "base64",
+                  "length": 32,
+                  "sha256": "7403a9f71d1f10ea722d38f2501addba1f3018acd89d28bc402daccb4ad09a48",
+                  "value": "JgZHAAAAAAAAAAAAaBIQBSYGRwAAAAAAAAAAAGgSEQU="
+                },
+                "registered": true,
+                "registry_reference": "RFC 9460, Section 7.3",
+                "value": [
+                  "2606:4700::6812:1005",
+                  "2606:4700::6812:1105"
+                ]
+              }
+            ],
+            "params": {
+              "alpn": [
+                "h2"
+              ],
+              "ipv4hint": [
+                "104.18.16.5",
+                "104.18.17.5"
+              ],
+              "ipv6hint": [
+                "2606:4700::6812:1005",
+                "2606:4700::6812:1105"
+              ]
+            },
+            "presentation": "1 . alpn=\"h2\" ipv4hint=\"104.18.16.5,104.18.17.5\" ipv6hint=\"2606:4700::6812:1005,2606:4700::6812:1105\"",
+            "priority": 1,
+            "raw": "1 . alpn=\"h2\" ipv4hint=\"104.18.16.5,104.18.17.5\" ipv6hint=\"2606:4700::6812:1005,2606:4700::6812:1105\"",
+            "rdata_sha256": "f87db53cb8a20005a759d0ce47809c06311920ec25cbf29d07289a18aaeaf47f",
+            "target": ".",
+            "ttl": null,
+            "usable": true,
+            "validation_issues": [],
+            "validity": "valid"
+          }
+        ],
+        "effective_validation_status": "valid",
+        "features": {
+          "alpn": [
+            "h2"
+          ],
+          "custom_port": false,
+          "ech_advertised": false,
+          "h3_advertised": false,
+          "ipv4_hints": [
+            "104.18.16.5",
+            "104.18.17.5"
+          ],
+          "ipv6_hints": [
+            "2606:4700::6812:1005",
+            "2606:4700::6812:1105"
+          ],
+          "no_default_alpn": false,
+          "ports": []
+        },
+        "present": true,
+        "records": [
+          {
+            "extensions": {
+              "compatible": true
+            },
+            "ignored": false,
+            "mode": "service",
+            "param_details": [
+              {
+                "client_supported": true,
+                "decoded": true,
+                "key": 1,
+                "known": true,
+                "name": "alpn",
+                "raw": {
+                  "encoding": "base64",
+                  "length": 3,
+                  "sha256": "7f0fe98d16484822506d6ad03b3cb6a7e04d2a6c33bb14ad28dd1dae9f86d4e3",
+                  "value": "Amgy"
+                },
+                "registered": true,
+                "registry_reference": "RFC 9460, Section 7.1",
+                "value": [
+                  "h2"
+                ]
+              },
+              {
+                "client_supported": true,
+                "decoded": true,
+                "key": 4,
+                "known": true,
+                "name": "ipv4hint",
+                "raw": {
+                  "encoding": "base64",
+                  "length": 8,
+                  "sha256": "ba9fb6d7bf7812445531e57651f5bebe2377d7c30c1c7d179ffb767bb3819a70",
+                  "value": "aBIQBWgSEQU="
+                },
+                "registered": true,
+                "registry_reference": "RFC 9460, Section 7.3",
+                "value": [
+                  "104.18.16.5",
+                  "104.18.17.5"
+                ]
+              },
+              {
+                "client_supported": true,
+                "decoded": true,
+                "key": 6,
+                "known": true,
+                "name": "ipv6hint",
+                "raw": {
+                  "encoding": "base64",
+                  "length": 32,
+                  "sha256": "7403a9f71d1f10ea722d38f2501addba1f3018acd89d28bc402daccb4ad09a48",
+                  "value": "JgZHAAAAAAAAAAAAaBIQBSYGRwAAAAAAAAAAAGgSEQU="
+                },
+                "registered": true,
+                "registry_reference": "RFC 9460, Section 7.3",
+                "value": [
+                  "2606:4700::6812:1005",
+                  "2606:4700::6812:1105"
+                ]
+              }
+            ],
+            "params": {
+              "alpn": [
+                "h2"
+              ],
+              "ipv4hint": [
+                "104.18.16.5",
+                "104.18.17.5"
+              ],
+              "ipv6hint": [
+                "2606:4700::6812:1005",
+                "2606:4700::6812:1105"
+              ]
+            },
+            "presentation": "1 . alpn=\"h2\" ipv4hint=\"104.18.16.5,104.18.17.5\" ipv6hint=\"2606:4700::6812:1005,2606:4700::6812:1105\"",
+            "priority": 1,
+            "raw": "1 . alpn=\"h2\" ipv4hint=\"104.18.16.5,104.18.17.5\" ipv6hint=\"2606:4700::6812:1005,2606:4700::6812:1105\"",
+            "rdata_sha256": "f87db53cb8a20005a759d0ce47809c06311920ec25cbf29d07289a18aaeaf47f",
+            "target": ".",
+            "ttl": null,
+            "usable": true,
+            "validation_issues": [],
+            "validity": "valid"
+          }
+        ],
+        "resolved_rrsets": [
+          {
+            "owner_name": "www.techcrunch.com.",
+            "record_type": "HTTPS",
+            "records": [
+              {
+                "compatible": true,
+                "ignored": false,
+                "mode": "service",
+                "param_details": [
+                  {
+                    "client_supported": true,
+                    "decoded": true,
+                    "key": 1,
+                    "known": true,
+                    "name": "alpn",
+                    "raw": {
+                      "encoding": "base64",
+                      "length": 3,
+                      "sha256": "7f0fe98d16484822506d6ad03b3cb6a7e04d2a6c33bb14ad28dd1dae9f86d4e3",
+                      "value": "Amgy"
+                    },
+                    "registered": true,
+                    "registry_reference": "RFC 9460, Section 7.1",
+                    "value": [
+                      "h2"
+                    ]
+                  },
+                  {
+                    "client_supported": true,
+                    "decoded": true,
+                    "key": 4,
+                    "known": true,
+                    "name": "ipv4hint",
+                    "raw": {
+                      "encoding": "base64",
+                      "length": 8,
+                      "sha256": "ba9fb6d7bf7812445531e57651f5bebe2377d7c30c1c7d179ffb767bb3819a70",
+                      "value": "aBIQBWgSEQU="
+                    },
+                    "registered": true,
+                    "registry_reference": "RFC 9460, Section 7.3",
+                    "value": [
+                      "104.18.16.5",
+                      "104.18.17.5"
+                    ]
+                  },
+                  {
+                    "client_supported": true,
+                    "decoded": true,
+                    "key": 6,
+                    "known": true,
+                    "name": "ipv6hint",
+                    "raw": {
+                      "encoding": "base64",
+                      "length": 32,
+                      "sha256": "7403a9f71d1f10ea722d38f2501addba1f3018acd89d28bc402daccb4ad09a48",
+                      "value": "JgZHAAAAAAAAAAAAaBIQBSYGRwAAAAAAAAAAAGgSEQU="
+                    },
+                    "registered": true,
+                    "registry_reference": "RFC 9460, Section 7.3",
+                    "value": [
+                      "2606:4700::6812:1005",
+                      "2606:4700::6812:1105"
+                    ]
+                  }
+                ],
+                "params": {
+                  "alpn": [
+                    "h2"
+                  ],
+                  "ipv4hint": [
+                    "104.18.16.5",
+                    "104.18.17.5"
+                  ],
+                  "ipv6hint": [
+                    "2606:4700::6812:1005",
+                    "2606:4700::6812:1105"
+                  ]
+                },
+                "presentation": "1 . alpn=\"h2\" ipv4hint=\"104.18.16.5,104.18.17.5\" ipv6hint=\"2606:4700::6812:1005,2606:4700::6812:1105\"",
+                "priority": 1,
+                "raw": "1 . alpn=\"h2\" ipv4hint=\"104.18.16.5,104.18.17.5\" ipv6hint=\"2606:4700::6812:1005,2606:4700::6812:1105\"",
+                "rdata_sha256": "f87db53cb8a20005a759d0ce47809c06311920ec25cbf29d07289a18aaeaf47f",
+                "target": ".",
+                "usable": true,
+                "validation_issues": [],
+                "validity": "valid"
+              }
+            ],
+            "validation_issues": [],
+            "validation_status": "valid"
+          }
+        ],
+        "status": "present",
+        "validation": {
+          "issues": [],
+          "status": "valid"
+        }
+      },
+      "domain": "techcrunch.com",
+      "fields": [
+        "records",
+        "features",
+        "effective_records",
+        "resolved_rrsets"
+      ],
+      "name": "www.techcrunch.com",
       "probe_type": "dns",
       "rrtype": "HTTPS",
       "variant": "www"
     }
   ],
-  "generated_at": "2026-11-13T05:34:55Z",
+  "comparable": true,
+  "from_scan": "2026-11-13T05:34:34Z",
+  "gained": [],
+  "generated_at": "2026-11-14T05:26:06Z",
   "lost": [],
   "schema_version": 2,
   "summary": {
-    "changed": 0,
-    "gained": 1,
+    "changed": 2,
+    "gained": 0,
     "lost": 0
   },
-  "to_scan": "2026-11-13T05:34:34Z"
+  "to_scan": "2026-11-14T05:25:46Z"
 }
