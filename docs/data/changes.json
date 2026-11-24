@@ -1,9 +1,9 @@
 {
   "changed": [],
   "comparable": true,
-  "from_scan": "2026-11-22T00:25:00Z",
+  "from_scan": "2026-11-23T00:25:32Z",
   "gained": [],
-  "generated_at": "2026-11-23T00:25:52Z",
+  "generated_at": "2026-11-24T00:22:16Z",
   "lost": [],
   "schema_version": 2,
   "summary": {
@@ -11,5 +11,5 @@
     "gained": 0,
     "lost": 0
   },
-  "to_scan": "2026-11-23T00:25:32Z"
+  "to_scan": "2026-11-24T00:21:55Z"
 }
